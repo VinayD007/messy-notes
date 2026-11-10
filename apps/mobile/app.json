@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "MessyNotes",
+    "slug": "MessyNotes",
+    "version": "1.0.0",
+    "platforms": ["android"],
+    "orientation": "portrait",
+    "scheme": "MessyNotes",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.oneline.notes",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1E264A"
+      }
+    },
+    "plugins": [
+      "./plugins/withMessyNotesApkName",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Select photos to attach to your notes."
+        }
+      ]
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "messy-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cross-platform real-time & offline-first notes application backed by Supabase.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@messy-notes/web",
+    "build:web": "npm run build --workspace=@messy-notes/web",
+    "dev:mobile": "npm run android --workspace=@messy-notes/mobile",
+    "dev:android:usb": "npm run android:usb --workspace=@messy-notes/mobile",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
