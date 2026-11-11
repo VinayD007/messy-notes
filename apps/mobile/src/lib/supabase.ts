@@ -72,12 +72,39 @@ const ChunkedSecureStoreAdapter = {
   },
 };
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+function normalizeEnvValue(raw: string | undefined): string {
+  const trimmed = (raw ?? '').trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+function isValidHttpUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+const rawSupabaseUrl = normalizeEnvValue(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, '');
+const rawSupabaseAnonKey = normalizeEnvValue(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+
+export const isSupabaseConfigured =
+  isValidHttpUrl(rawSupabaseUrl) &&
+  rawSupabaseAnonKey.length > 0 &&
+  !rawSupabaseUrl.includes('your-project-ref.supabase.co') &&
+  rawSupabaseAnonKey !== 'your-supabase-anon-key';
+
 export const SUPABASE_CONFIG_ERROR =
-  'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. Configure environment variables before building.';
+  'Missing or invalid EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. Configure environment variables before building.';
 
 if (!isSupabaseConfigured) {
   console.warn(SUPABASE_CONFIG_ERROR);
@@ -85,8 +112,8 @@ if (!isSupabaseConfigured) {
 
 // Keep module import non-fatal when CI or offline builds lack .env; authStore surfaces SUPABASE_CONFIG_ERROR in UI.
 export const supabase = createClient<Database>(
-  supabaseUrl || 'https://placeholder.supabase.invalid',
-  supabaseAnonKey || 'placeholder-anon-key',
+  isSupabaseConfigured ? rawSupabaseUrl : 'https://placeholder.supabase.invalid',
+  isSupabaseConfigured ? rawSupabaseAnonKey : 'placeholder-anon-key',
   {
   auth: {
     storage: ChunkedSecureStoreAdapter,
