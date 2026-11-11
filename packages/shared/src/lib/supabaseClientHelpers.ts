@@ -1,3 +1,5 @@
+export type SupabaseKeyFormat = 'publishable' | 'jwt' | 'custom' | 'none';
+
 export interface SupabaseConfigCandidate {
   url?: string | null;
   anonKey?: string | null;
@@ -9,6 +11,7 @@ export interface ResolvedSupabaseConfig {
   anonKey: string;
   isConfigured: boolean;
   maskedUrl: string;
+  keyFormat: SupabaseKeyFormat;
   source: string;
 }
 
@@ -75,6 +78,25 @@ export function maskSupabaseUrl(rawUrl: string): string {
   }
 }
 
+/**
+ * Classifies the Supabase client API key without enforcing strict JWT regex checks,
+ * supporting both modern `sb_publishable_` keys and legacy `eyJ...` JWT keys.
+ */
+export function detectSupabaseKeyFormat(anonKey: string): SupabaseKeyFormat {
+  if (!anonKey) return 'none';
+  if (anonKey.startsWith('sb_publishable_')) return 'publishable';
+  if (anonKey.startsWith('eyJ') && anonKey.split('.').length === 3) return 'jwt';
+  return 'custom';
+}
+
+export function isValidSupabaseKey(anonKey: string): boolean {
+  return (
+    anonKey.length > 0 &&
+    anonKey !== 'your-supabase-anon-key' &&
+    anonKey !== PLACEHOLDER_KEY
+  );
+}
+
 export function resolveSupabaseConfig(
   candidates: SupabaseConfigCandidate[]
 ): ResolvedSupabaseConfig {
@@ -87,18 +109,17 @@ export function resolveSupabaseConfig(
       firstNonEmptyUrl = url;
     }
 
-    const isPlaceholder =
+    const isPlaceholderUrl =
       url.includes('your-project-ref.supabase.co') ||
-      url.includes('placeholder.supabase.invalid') ||
-      anonKey === 'your-supabase-anon-key' ||
-      anonKey === PLACEHOLDER_KEY;
+      url.includes('placeholder.supabase.invalid');
 
-    if (isValidHttpUrl(url) && anonKey.length > 0 && !isPlaceholder) {
+    if (isValidHttpUrl(url) && !isPlaceholderUrl && isValidSupabaseKey(anonKey)) {
       return {
         url,
         anonKey,
         isConfigured: true,
         maskedUrl: maskSupabaseUrl(url),
+        keyFormat: detectSupabaseKeyFormat(anonKey),
         source: candidate.source,
       };
     }
@@ -109,6 +130,7 @@ export function resolveSupabaseConfig(
     anonKey: PLACEHOLDER_KEY,
     isConfigured: false,
     maskedUrl: firstNonEmptyUrl ? maskSupabaseUrl(firstNonEmptyUrl) : '(unconfigured)',
+    keyFormat: 'none',
     source: 'none',
   };
 }
@@ -123,6 +145,7 @@ export function logSupabaseDiagnostic(
     configured: config.isConfigured,
     source: config.source,
     url: config.maskedUrl,
+    keyFormat: config.keyFormat,
   });
 }
 
