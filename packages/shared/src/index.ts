@@ -1,5 +1,6 @@
 export * from './types/note';
 export * from './types/database';
+export * from './lib/supabaseClientHelpers';
 export * from './sync/merge';
 export * from './sync/outbox';
 export * from './sync/supabaseRemote';

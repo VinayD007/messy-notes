@@ -46,6 +46,7 @@ jobs:
         run: |
           node -e '
             const fs = require("node:fs");
+            const dns = require("node:dns").promises;
             const clean = (v) => (v || "").replace(/[\r\n\t\s]+/g, "").replace(/^[\x22\x27]+|[\x22\x27]+$/g, "");
             const url = clean(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, "");
             const key = clean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
@@ -53,7 +54,40 @@ jobs:
               console.error("::error::Missing or invalid EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY repository secrets. Configure both in GitHub Settings -> Secrets and variables -> Actions.");
               process.exit(1);
             }
-            fs.writeFileSync("apps/mobile/.env", `EXPO_PUBLIC_SUPABASE_URL=${url}\nEXPO_PUBLIC_SUPABASE_ANON_KEY=${key}\n`);
+            (async () => {
+              let parsed;
+              try {
+                parsed = new URL(url);
+              } catch {
+                console.error("::error::Malformed EXPO_PUBLIC_SUPABASE_URL repository secret.");
+                process.exit(1);
+              }
+              const parts = parsed.hostname.split(".");
+              const ref = parts[0] || "";
+              const maskedRef = ref.length > 6 ? `${ref.slice(0, 3)}***${ref.slice(-3)} (len=${ref.length})` : `*** (len=${ref.length})`;
+              const maskedUrl = `${parsed.protocol}//${maskedRef}.${parts.slice(1).join(".")}`;
+              console.log(`Validating Supabase target: ${maskedUrl}, keyLen=${key.length}`);
+              try {
+                await dns.lookup(parsed.hostname);
+              } catch (err) {
+                console.error(`::error::DNS lookup failed (${err.code || err.message}) for ${maskedUrl}. Check EXPO_PUBLIC_SUPABASE_URL secret for typos (standard Supabase project refs are 20 chars).`);
+                process.exit(1);
+              }
+              try {
+                const res = await fetch(`${url}/auth/v1/health`, {
+                  headers: { apikey: key },
+                  signal: AbortSignal.timeout(10000),
+                });
+                if (!res.ok) {
+                  console.error(`::error::Supabase /auth/v1/health returned HTTP ${res.status} for ${maskedUrl}. Verify EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.`);
+                  process.exit(1);
+                }
+              } catch (err) {
+                console.error(`::error::HTTPS health check failed for ${maskedUrl}: ${err.message}`);
+                process.exit(1);
+              }
+              fs.writeFileSync("apps/mobile/.env", `EXPO_PUBLIC_SUPABASE_URL=${url}\nEXPO_PUBLIC_SUPABASE_ANON_KEY=${key}\n`);
+            })();
           '
 
       - name: Build Android Release APK

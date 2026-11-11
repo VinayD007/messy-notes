@@ -1,29 +1,74 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@messy-notes/shared';
+import {
+  createResilientFetch,
+  logSupabaseDiagnostic,
+  resolveSupabaseConfig,
+  SUPABASE_CONFIG_ERROR,
+  type Database,
+} from '@messy-notes/shared';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+interface RuntimeSupabaseGlobal {
+  __MESSY_NOTES_CONFIG__?: {
+    VITE_SUPABASE_URL?: string;
+    VITE_SUPABASE_ANON_KEY?: string;
+    supabaseUrl?: string;
+    supabaseAnonKey?: string;
+  };
+}
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Copy apps/web/.env.example to apps/web/.env.'
-  );
+const runtimeConfig = (globalThis as RuntimeSupabaseGlobal).__MESSY_NOTES_CONFIG__;
+
+export const supabaseConfig = resolveSupabaseConfig([
+  {
+    url: import.meta.env.VITE_SUPABASE_URL,
+    anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    source: 'import.meta.env',
+  },
+  {
+    url: runtimeConfig?.VITE_SUPABASE_URL ?? runtimeConfig?.supabaseUrl,
+    anonKey: runtimeConfig?.VITE_SUPABASE_ANON_KEY ?? runtimeConfig?.supabaseAnonKey,
+    source: 'window.__MESSY_NOTES_CONFIG__',
+  },
+]);
+
+export const isSupabaseConfigured = supabaseConfig.isConfigured;
+export { SUPABASE_CONFIG_ERROR };
+
+logSupabaseDiagnostic(
+  'web',
+  supabaseConfig,
+  Boolean(
+    import.meta.env.DEV ||
+      import.meta.env.MODE === 'staging' ||
+      import.meta.env.VITE_APP_ENV === 'staging'
+  )
+);
+
+if (!isSupabaseConfigured) {
+  console.warn(SUPABASE_CONFIG_ERROR);
 }
 
 /**
  * Typed Supabase client for the Web application.
- * Passes the shared Database schema generic to preserve strict table, column,
- * and Realtime typing across all PostgREST queries and mutations.
+ * Passes the shared Database schema generic plus resilient fetch timeouts/retries
+ * across PostgREST queries, Auth, Storage, and Realtime subscriptions.
  */
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
+export const supabase = createClient<Database>(
+  supabaseConfig.url,
+  supabaseConfig.anonKey,
+  {
+    global: {
+      fetch: createResilientFetch({ timeoutMs: 15_000 }),
     },
-  },
-});
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+    },
+  }
+);

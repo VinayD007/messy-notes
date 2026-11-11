@@ -1,8 +1,15 @@
 import 'react-native-url-polyfill/auto';
 import { AppState, type AppStateStatus } from 'react-native';
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@messy-notes/shared';
+import {
+  createResilientFetch,
+  logSupabaseDiagnostic,
+  resolveSupabaseConfig,
+  SUPABASE_CONFIG_ERROR,
+  type Database,
+} from '@messy-notes/shared';
 
 const CHUNK_SIZE = 1800;
 
@@ -72,39 +79,49 @@ const ChunkedSecureStoreAdapter = {
   },
 };
 
-function normalizeEnvValue(raw: string | undefined): string {
-  const cleaned = (raw ?? '').replace(/[\r\n\t\s]+/g, '');
-  if (
-    cleaned.length >= 2 &&
-    ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-      (cleaned.startsWith("'") && cleaned.endsWith("'")))
-  ) {
-    return cleaned.slice(1, -1);
-  }
-  return cleaned;
+interface ExtraSupabaseConfig {
+  EXPO_PUBLIC_SUPABASE_URL?: string;
+  EXPO_PUBLIC_SUPABASE_ANON_KEY?: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
 }
 
-function isValidHttpUrl(value: string): boolean {
-  if (!value) return false;
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
+const expoExtra = (Constants.expoConfig?.extra ??
+  (Constants.manifest2?.extra as { expoClient?: { extra?: ExtraSupabaseConfig } } | undefined)
+    ?.expoClient?.extra) as ExtraSupabaseConfig | undefined;
 
-const rawSupabaseUrl = normalizeEnvValue(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, '');
-const rawSupabaseAnonKey = normalizeEnvValue(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+const runtimeGlobal = (
+  globalThis as { __MESSY_NOTES_CONFIG__?: ExtraSupabaseConfig }
+).__MESSY_NOTES_CONFIG__;
 
-export const isSupabaseConfigured =
-  isValidHttpUrl(rawSupabaseUrl) &&
-  rawSupabaseAnonKey.length > 0 &&
-  !rawSupabaseUrl.includes('your-project-ref.supabase.co') &&
-  rawSupabaseAnonKey !== 'your-supabase-anon-key';
+// Keep static process.env.EXPO_PUBLIC_* accesses direct so babel-preset-expo inlines them at bundle time.
+export const supabaseConfig = resolveSupabaseConfig([
+  {
+    url: process.env.EXPO_PUBLIC_SUPABASE_URL,
+    anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    source: 'process.env',
+  },
+  {
+    url: expoExtra?.EXPO_PUBLIC_SUPABASE_URL ?? expoExtra?.supabaseUrl,
+    anonKey: expoExtra?.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? expoExtra?.supabaseAnonKey,
+    source: 'expo-constants.extra',
+  },
+  {
+    url: runtimeGlobal?.EXPO_PUBLIC_SUPABASE_URL ?? runtimeGlobal?.supabaseUrl,
+    anonKey: runtimeGlobal?.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? runtimeGlobal?.supabaseAnonKey,
+    source: 'globalThis.__MESSY_NOTES_CONFIG__',
+  },
+]);
 
-export const SUPABASE_CONFIG_ERROR =
-  'Missing or invalid EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. Configure environment variables before building.';
+export const isSupabaseConfigured = supabaseConfig.isConfigured;
+export { SUPABASE_CONFIG_ERROR };
+
+const isDiagEnabled =
+  (typeof __DEV__ !== 'undefined' && __DEV__) ||
+  process.env.EXPO_PUBLIC_APP_ENV === 'staging' ||
+  process.env.NODE_ENV !== 'production';
+
+logSupabaseDiagnostic('mobile', supabaseConfig, isDiagEnabled);
 
 if (!isSupabaseConfigured) {
   console.warn(SUPABASE_CONFIG_ERROR);
@@ -112,21 +129,25 @@ if (!isSupabaseConfigured) {
 
 // Keep module import non-fatal when CI or offline builds lack .env; authStore surfaces SUPABASE_CONFIG_ERROR in UI.
 export const supabase = createClient<Database>(
-  isSupabaseConfigured ? rawSupabaseUrl : 'https://placeholder.supabase.invalid',
-  isSupabaseConfigured ? rawSupabaseAnonKey : 'placeholder-anon-key',
+  supabaseConfig.url,
+  supabaseConfig.anonKey,
   {
-  auth: {
-    storage: ChunkedSecureStoreAdapter,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
+    global: {
+      fetch: createResilientFetch({ timeoutMs: 15_000 }),
     },
-  },
-});
+    auth: {
+      storage: ChunkedSecureStoreAdapter,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+    },
+  }
+);
 
 /**
  * Suspends background JWT refresh timers while the mobile app is inactive and

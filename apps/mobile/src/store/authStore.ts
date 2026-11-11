@@ -1,10 +1,12 @@
 import type { Session, User } from '@supabase/supabase-js';
+import { formatSupabaseAuthError } from '@messy-notes/shared';
 import { create } from 'zustand';
 import { clearAllLocalData } from '../lib/mmkvStorage';
 import {
   isSupabaseConfigured,
   registerSupabaseAppStateRefresh,
   supabase,
+  supabaseConfig,
   SUPABASE_CONFIG_ERROR,
 } from '../lib/supabase';
 import { syncEngine } from '../sync/syncEngine';
@@ -20,20 +22,6 @@ interface AuthState {
   signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
   clearError: () => void;
-}
-
-function formatAuthErrorMessage(err: unknown, fallback: string): string {
-  const raw =
-    err instanceof Error
-      ? err.message
-      : typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string'
-        ? err.message
-        : fallback;
-
-  if (/network request failed/i.test(raw)) {
-    return 'Network request failed while connecting to Supabase. Check your internet/DNS connection (if your ISP blocks supabase.co, try Private DNS or another network) and retry.';
-  }
-  return raw;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -65,7 +53,9 @@ export const useAuthStore = create<AuthState>((set) => ({
           session: data.session ?? null,
           user: data.session?.user ?? null,
           initialized: true,
-          error: error ? error.message : null,
+          error: error
+            ? formatSupabaseAuthError(error, 'Failed to initialize session', supabaseConfig.maskedUrl)
+            : null,
         });
       })
       .catch((err: unknown) => {
@@ -74,7 +64,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           session: null,
           user: null,
           initialized: true,
-          error: err instanceof Error ? err.message : 'Failed to initialize session',
+          error: formatSupabaseAuthError(
+            err,
+            'Failed to initialize session',
+            supabaseConfig.maskedUrl
+          ),
         });
       });
 
@@ -110,7 +104,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
 
       if (error) {
-        const message = formatAuthErrorMessage(error, 'Sign-in failed');
+        const message = formatSupabaseAuthError(
+          error,
+          'Sign-in failed',
+          supabaseConfig.maskedUrl
+        );
         set({ loading: false, error: message });
         throw error;
       }
@@ -122,7 +120,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         error: null,
       });
     } catch (err) {
-      set({ loading: false, error: formatAuthErrorMessage(err, 'Sign-in failed') });
+      set({
+        loading: false,
+        error: formatSupabaseAuthError(err, 'Sign-in failed', supabaseConfig.maskedUrl),
+      });
       throw err;
     }
   },
@@ -141,7 +142,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
 
       if (error) {
-        const message = formatAuthErrorMessage(error, 'Sign-up failed');
+        const message = formatSupabaseAuthError(
+          error,
+          'Sign-up failed',
+          supabaseConfig.maskedUrl
+        );
         set({ loading: false, error: message });
         throw error;
       }
@@ -155,7 +160,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       return { needsEmailConfirmation: !data.session };
     } catch (err) {
-      set({ loading: false, error: formatAuthErrorMessage(err, 'Sign-up failed') });
+      set({
+        loading: false,
+        error: formatSupabaseAuthError(err, 'Sign-up failed', supabaseConfig.maskedUrl),
+      });
       throw err;
     }
   },
