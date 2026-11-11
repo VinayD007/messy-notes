@@ -39,8 +39,7 @@ jobs:
         working-directory: apps/mobile
         run: npm install
 
-      - name: Inject Supabase Environment Variables
-        working-directory: apps/mobile
+      - name: Create Environment File
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
@@ -54,7 +53,7 @@ jobs:
               console.error("::error::Missing or invalid EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY repository secrets. Configure both in GitHub Settings -> Secrets and variables -> Actions.");
               process.exit(1);
             }
-            fs.writeFileSync(".env", `EXPO_PUBLIC_SUPABASE_URL=${url}\nEXPO_PUBLIC_SUPABASE_ANON_KEY=${key}\n`);
+            fs.writeFileSync("apps/mobile/.env", `EXPO_PUBLIC_SUPABASE_URL=${url}\nEXPO_PUBLIC_SUPABASE_ANON_KEY=${key}\n`);
           '
 
       - name: Build Android Release APK
