@@ -77,7 +77,7 @@ export function FloatingComposerActions({
           onTogglePlusMenu();
         }}
       >
-        <AddIcon size={24} />
+        <AddIcon size={20} />
       </button>
     </div>
   );

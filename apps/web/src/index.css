@@ -701,8 +701,8 @@ textarea {
 }
 
 .composer-floating-wrap .floating-actions-overlay {
-  right: 6px;
-  bottom: calc(100% + 14px);
+  right: 11px;
+  bottom: calc(100% + 10px);
   z-index: 27;
 }
 
@@ -772,9 +772,9 @@ textarea {
 }
 
 .m3-primary-fab {
-  width: 48px;
-  height: 48px;
-  border-radius: 18px;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
   border: none;
   background: var(--accent);
   color: var(--on-accent);

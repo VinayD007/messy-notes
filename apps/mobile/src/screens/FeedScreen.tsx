@@ -123,7 +123,7 @@ export function FeedScreen() {
   const [previewPhotoUri, setPreviewPhotoUri] = useState<string | null>(null);
   const [downloadingPhoto, setDownloadingPhoto] = useState(false);
   const [photoSavedFeedback, setPhotoSavedFeedback] = useState<string | null>(null);
-  const [composerHeight, setComposerHeight] = useState(74);
+  const [composerHeight, setComposerHeight] = useState(126);
   const [confirmDialog, setConfirmDialog] = useState<MobileConfirmConfig | null>(null);
 
   const listRef = useRef<FlatList<Note> | null>(null);
@@ -135,7 +135,6 @@ export function FeedScreen() {
     new Animated.Value(activeView === 'home' ? 1 : 0)
   ).current;
   const fabMorphAnim = useRef(new Animated.Value(0)).current;
-  const heroPressScale = useRef(new Animated.Value(1)).current;
   const syncPulseAnim = useRef(new Animated.Value(0)).current;
   const composerInputRef = useRef<TextInput | null>(null);
   const drawerTranslateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
@@ -888,7 +887,7 @@ export function FeedScreen() {
             { backgroundColor: palette.bg },
           ]}
         >
-          {/* CenterAligned M3E TopAppBar */}
+          {/* Left-aligned TopAppBar: Hamburger + Title + Live Badge | Expand + Search */}
           <View style={styles.headerSideLeft}>
             <Pressable
               style={[
@@ -909,62 +908,65 @@ export function FeedScreen() {
                 color={palette.textPrimary}
               />
             </Pressable>
-          </View>
 
-          <View style={styles.headerCenter}>
-            <Text style={[styles.headerTitle, { color: palette.textPrimary }]} numberOfLines={1}>
-              {activeView === 'favorites'
-                ? 'Favorites'
-                : activeView === 'bin'
-                  ? 'Bin'
-                  : 'MessyNotes'}
-            </Text>
-            <View
-              style={[
-                styles.headerStatusPill,
-                {
-                  backgroundColor:
-                    syncState === 'syncing' ? palette.primaryContainer : palette.surfaceCard,
-                  borderColor: palette.outlineVariant,
-                },
-              ]}
-            >
-              {syncState === 'syncing' ? (
-                <Animated.View
-                  style={[
-                    styles.m3eSyncShape,
-                    {
-                      backgroundColor: palette.noteBubbleAccent,
-                      transform: [
-                        {
-                          rotate: syncPulseAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['0deg', '90deg'],
-                          }),
-                        },
-                        {
-                          scale: syncPulseAnim.interpolate({
-                            inputRange: [0, 0.5, 1],
-                            outputRange: [0.85, 1.15, 0.85],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                />
-              ) : null}
+            <View style={styles.headerTitleGroup}>
               <Text
-                style={{
-                  color:
-                    syncState === 'syncing'
-                      ? palette.onPrimaryContainer
-                      : palette.noteBubbleAccent,
-                  ...MessNoteTypography.labelMedium,
-                }}
+                style={[styles.headerTitle, { color: palette.textPrimary, flexShrink: 1 }]}
                 numberOfLines={1}
               >
-                {statusLabel}
+                {activeView === 'favorites'
+                  ? 'Favorites'
+                  : activeView === 'bin'
+                    ? 'Bin'
+                    : 'MessyNotes'}
               </Text>
+              <View
+                style={[
+                  styles.headerStatusPill,
+                  {
+                    backgroundColor:
+                      syncState === 'syncing' ? palette.primaryContainer : palette.surfaceCard,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
+              >
+                {syncState === 'syncing' ? (
+                  <Animated.View
+                    style={[
+                      styles.m3eSyncShape,
+                      {
+                        backgroundColor: palette.noteBubbleAccent,
+                        transform: [
+                          {
+                            rotate: syncPulseAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['0deg', '90deg'],
+                            }),
+                          },
+                          {
+                            scale: syncPulseAnim.interpolate({
+                              inputRange: [0, 0.5, 1],
+                              outputRange: [0.85, 1.15, 0.85],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  />
+                ) : null}
+                <Text
+                  style={{
+                    color:
+                      syncState === 'syncing'
+                        ? palette.onPrimaryContainer
+                        : palette.noteBubbleAccent,
+                    ...MessNoteTypography.labelMedium,
+                  }}
+                  numberOfLines={1}
+                >
+                  {statusLabel}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -1043,98 +1045,7 @@ export function FeedScreen() {
         </View>
       )}
 
-      {/* M3E Hero SplitActionButton Section (Home idle state) */}
-      {activeView === 'home' && !searchActive && !selectionMode ? (
-        <Animated.View
-          style={[styles.heroSplitRow, { transform: [{ scale: heroPressScale }] }]}
-        >
-          <Pressable
-            style={({ pressed }) => [
-              styles.heroSplitPrimary,
-              {
-                backgroundColor: palette.primaryContainer,
-                borderTopRightRadius: plusMenuOpen
-                  ? MessNoteMetrics.splitButtonOuterRadius
-                  : MessNoteMetrics.splitButtonInnerRadius,
-                borderBottomRightRadius: plusMenuOpen
-                  ? MessNoteMetrics.splitButtonOuterRadius
-                  : MessNoteMetrics.splitButtonInnerRadius,
-                opacity: pressed ? 0.92 : 1,
-              },
-            ]}
-            accessibilityLabel="Create rich note"
-            onPressIn={() => {
-              Animated.spring(heroPressScale, {
-                toValue: MessNoteMotion.pressScale,
-                ...MessNoteMotion.expressiveFast,
-                useNativeDriver: true,
-              }).start();
-            }}
-            onPressOut={() => {
-              Animated.spring(heroPressScale, {
-                toValue: 1,
-                ...MessNoteMotion.expressiveFast,
-                useNativeDriver: true,
-              }).start();
-            }}
-            onPress={() => {
-              composerInputRef.current?.blur();
-              Keyboard.dismiss();
-              setPlusMenuOpen(false);
-              setComposerExpanded(true);
-            }}
-          >
-            <MaterialIcons name="auto-awesome" size={18} color={palette.onPrimaryContainer} />
-            <Text style={[styles.heroPrimaryLabel, { color: palette.onPrimaryContainer }]}>
-              New rich note
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.heroSplitSecondary,
-              {
-                backgroundColor: plusMenuOpen
-                  ? palette.noteBubbleAccent
-                  : palette.primaryContainer,
-                borderTopLeftRadius: plusMenuOpen
-                  ? MessNoteMetrics.splitButtonOuterRadius
-                  : MessNoteMetrics.splitButtonInnerRadius,
-                borderBottomLeftRadius: plusMenuOpen
-                  ? MessNoteMetrics.splitButtonOuterRadius
-                  : MessNoteMetrics.splitButtonInnerRadius,
-              },
-            ]}
-            accessibilityLabel="Toggle structured note templates"
-            onPress={() => {
-              composerInputRef.current?.blur();
-              Keyboard.dismiss();
-              setPlusMenuOpen((prev) => !prev);
-            }}
-          >
-            <Animated.View
-              style={{
-                transform: [
-                  {
-                    rotate: fabMorphAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0deg', '180deg'],
-                    }),
-                  },
-                ],
-              }}
-            >
-              <MaterialIcons
-                name="expand-less"
-                size={22}
-                color={plusMenuOpen ? palette.onAccent : palette.onPrimaryContainer}
-              />
-            </Animated.View>
-          </Pressable>
-        </Animated.View>
-      ) : null}
-
-      {/* Home Filter Bar (Horizontal Scrolling Pills) */}
+      {/* Home Filter Bar (Positioned directly below header) */}
       {activeView === 'home' ? (
         <Animated.View style={{ opacity: filterBarOpacity }}>
           <ScrollView
@@ -1228,7 +1139,7 @@ export function FeedScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.feedContent,
-            { paddingBottom: showComposer ? 112 : 28 },
+            { paddingBottom: showComposer ? composerHeight + 24 : 28 },
           ]}
           refreshControl={
             <RefreshControl
@@ -1282,13 +1193,13 @@ export function FeedScreen() {
         />
       ) : null}
 
-      {/* Floating Structured Note '+' Menu above Floating Pill BottomAppBar */}
+      {/* Floating Structured Note '+' Menu above Stacked '+' Action Button */}
       {showComposer && plusMenuOpen ? (
         <Animated.View
           style={[
             styles.floatingOverlay,
             {
-              bottom: composerHeight + 10,
+              bottom: composerHeight + 6,
               opacity: fabMorphAnim,
               transform: [
                 {
@@ -1367,7 +1278,7 @@ export function FeedScreen() {
         </Animated.View>
       ) : null}
 
-      {/* Floating Pill M3E BottomAppBar (Composer + Attach + Send + Split/FAB Menu) */}
+      {/* Floating Bottom Composer: '+' stacked directly above Send, pill holds input + clip + send */}
       {showComposer ? (
         <View
           onLayout={(e) => setComposerHeight(Math.round(e.nativeEvent.layout.height))}
@@ -1378,21 +1289,67 @@ export function FeedScreen() {
               backgroundColor: 'transparent',
             },
           ]}
+          pointerEvents="box-none"
         >
-          {draftPhotos.length > 0 ? (
-            <View style={styles.draftPhotosRow}>
-              {draftPhotos.map((p, idx) => (
-                <Pressable
-                  key={`${p.uri}-${idx}`}
-                  onPress={() =>
-                    setDraftPhotos((prev) => prev.filter((_, i) => i !== idx))
-                  }
-                >
-                  <Image source={{ uri: p.uri }} style={styles.draftThumb} />
-                </Pressable>
-              ))}
+          <View style={styles.composerTopActionRow} pointerEvents="box-none">
+            <View style={styles.composerDraftPhotosWrap} pointerEvents="box-none">
+              {draftPhotos.length > 0 ? (
+                <View style={styles.draftPhotosRow}>
+                  {draftPhotos.map((p, idx) => (
+                    <Pressable
+                      key={`${p.uri}-${idx}`}
+                      onPress={() =>
+                        setDraftPhotos((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                    >
+                      <Image source={{ uri: p.uri }} style={styles.draftThumb} />
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
             </View>
-          ) : null}
+
+            <Pressable
+              style={[
+                styles.bottomActionBtn,
+                {
+                  backgroundColor: plusMenuOpen
+                    ? palette.noteBubbleAccent
+                    : palette.primaryContainer,
+                  elevation: 4,
+                },
+              ]}
+              accessibilityLabel={plusMenuOpen ? 'Close quick note menu' : 'Create structured note'}
+              onPress={() => {
+                if (plusMenuOpen) {
+                  setPlusMenuOpen(false);
+                  return;
+                }
+                composerInputRef.current?.blur();
+                Keyboard.dismiss();
+                setPlusMenuOpen(true);
+              }}
+            >
+              <Animated.View
+                style={{
+                  transform: [
+                    {
+                      rotate: fabMorphAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '45deg'],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <MaterialIcons
+                  name="add"
+                  size={20}
+                  color={plusMenuOpen ? palette.onAccent : palette.onPrimaryContainer}
+                />
+              </Animated.View>
+            </Pressable>
+          </View>
 
           <View
             style={[
@@ -1450,47 +1407,6 @@ export function FeedScreen() {
                 color={palette.onAccent}
               />
             </Pressable>
-
-            <Pressable
-              style={[
-                styles.bottomActionBtn,
-                {
-                  backgroundColor: plusMenuOpen
-                    ? palette.noteBubbleAccent
-                    : palette.primaryContainer,
-                  borderRadius: plusMenuOpen ? 22 : 14,
-                },
-              ]}
-              accessibilityLabel={plusMenuOpen ? 'Close quick note menu' : 'Create structured note'}
-              onPress={() => {
-                if (plusMenuOpen) {
-                  setPlusMenuOpen(false);
-                  return;
-                }
-                composerInputRef.current?.blur();
-                Keyboard.dismiss();
-                setPlusMenuOpen(true);
-              }}
-            >
-              <Animated.View
-                style={{
-                  transform: [
-                    {
-                      rotate: fabMorphAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0deg', '45deg'],
-                      }),
-                    },
-                  ],
-                }}
-              >
-                <MaterialIcons
-                  name="add"
-                  size={22}
-                  color={plusMenuOpen ? palette.onAccent : palette.onPrimaryContainer}
-                />
-              </Animated.View>
-            </Pressable>
           </View>
         </View>
       ) : null}
@@ -1501,7 +1417,7 @@ export function FeedScreen() {
           style={[
             styles.snackbar,
             {
-              bottom: showComposer ? 92 : 24,
+              bottom: showComposer ? composerHeight + 10 : 24,
               backgroundColor: palette.surfaceElevated,
               borderColor: palette.outlineVariant,
             },
@@ -1983,25 +1899,29 @@ const styles = StyleSheet.create({
     gap: MessNoteMetrics.intraSpacing,
   },
   headerSideLeft: {
-    width: 96,
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
+    gap: 10,
   },
-  headerCenter: {
+  headerTitleGroup: {
     flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    gap: 8,
   },
   headerSideRight: {
-    minWidth: 96,
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: MessNoteMetrics.intraSpacing,
   },
   headerStatusPill: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -2014,35 +1934,6 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 4,
-  },
-  heroSplitRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    paddingHorizontal: MessNoteMetrics.outerGutter,
-    marginBottom: MessNoteMetrics.intraSpacing,
-    gap: MessNoteMetrics.intraSpacing,
-  },
-  heroSplitPrimary: {
-    flex: 1,
-    minHeight: 48,
-    borderTopLeftRadius: MessNoteMetrics.splitButtonOuterRadius,
-    borderBottomLeftRadius: MessNoteMetrics.splitButtonOuterRadius,
-    paddingHorizontal: MessNoteMetrics.outerGutter,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: MessNoteMetrics.intraSpacing,
-  },
-  heroPrimaryLabel: {
-    ...MessNoteTypography.labelLarge,
-  },
-  heroSplitSecondary: {
-    width: 56,
-    minHeight: 48,
-    borderTopRightRadius: MessNoteMetrics.splitButtonOuterRadius,
-    borderBottomRightRadius: MessNoteMetrics.splitButtonOuterRadius,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   expressiveLoaderPill: {
     alignSelf: 'center',
@@ -2201,8 +2092,8 @@ const styles = StyleSheet.create({
   },
   floatingOverlay: {
     position: 'absolute',
-    right: MessNoteMetrics.outerGutter,
-    bottom: 86,
+    right: MessNoteMetrics.outerGutter + 9,
+    bottom: 136,
     zIndex: 30,
     elevation: 16,
     alignItems: 'flex-end',
@@ -2226,10 +2117,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: MessNoteMetrics.outerGutter,
     paddingBottom: 12,
     paddingTop: 4,
+    gap: 10,
+  },
+  composerTopActionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingRight: 9,
     gap: MessNoteMetrics.intraSpacing,
+  },
+  composerDraftPhotosWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   draftPhotosRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: MessNoteMetrics.intraSpacing,
   },
   draftThumb: {
@@ -2253,12 +2156,12 @@ const styles = StyleSheet.create({
     flex: 1,
     ...MessNoteTypography.bodyLarge,
     maxHeight: 120,
-    paddingVertical: 7,
+    paddingVertical: 9,
   },
   pillSmallBtn: {
     width: 40,
-    height: 40,
-    borderRadius: 20,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
