@@ -201,23 +201,6 @@ export function SingleNoteOptionsModal({
           </div>
         </div>
 
-        {liveNote.type === 'regular' && liveNote.content.body.trim() && (
-          <div className="options-note-preview">
-            <PlainTextView
-              body={liveNote.content.body}
-              spans={liveNote.content.spans}
-              onCopyMono={(snippet) => {
-                void navigator.clipboard.writeText(snippet);
-                showSnackbar({ message: `Copied: ${snippet}` });
-              }}
-              onOpenLink={(href) => {
-                onClose();
-                onRequestOpenLink?.(href);
-              }}
-            />
-          </div>
-        )}
-
         <div className="sheet-actions">
           {isBin ? (
             <>

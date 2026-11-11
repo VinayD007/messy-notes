@@ -77,7 +77,7 @@ export function FloatingComposerActions({
           onTogglePlusMenu();
         }}
       >
-        <AddIcon size={20} />
+        <AddIcon size={22} />
       </button>
     </div>
   );
@@ -160,7 +160,7 @@ export function BottomComposer({
             }
             onFocus={onFocusInput}
             onKeyDown={handleKeyDown}
-            placeholder="write a note..."
+            placeholder="Start a Note..."
           />
 
           <div className="composer-pill-actions">
@@ -182,7 +182,7 @@ export function BottomComposer({
                 fileInputRef.current?.click();
               }}
             >
-              <AttachFileIcon size={20} />
+              <AttachFileIcon size={21} />
             </button>
 
             <button
@@ -193,7 +193,7 @@ export function BottomComposer({
               title="Send note (Ctrl+Enter)"
               onClick={() => void handleSubmit()}
             >
-              <ArrowForwardIcon size={20} />
+              <ArrowForwardIcon size={22} />
             </button>
           </div>
         </div>

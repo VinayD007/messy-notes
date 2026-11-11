@@ -357,6 +357,23 @@ export async function removeRemoteHardDeletedNote(noteId: string): Promise<void>
   storage.delete(`${NOTE_PREFIX}${noteId}`);
 }
 
+export async function reconcileRemoteNoteIds(
+  userId: string,
+  remoteIds: ReadonlySet<string>
+): Promise<void> {
+  const storage = await getDataStorage();
+  for (const key of storage.getAllKeys()) {
+    if (!key.startsWith(NOTE_PREFIX)) continue;
+    const record = readJson<CachedMobileNote>(storage, key);
+    if (!record || record.user_id !== userId) continue;
+    if (record.serverUpdatedAt === null) continue;
+    if (storage.contains(`${OUTBOX_PREFIX}${record.id}`)) continue;
+    if (!remoteIds.has(record.id)) {
+      storage.delete(key);
+    }
+  }
+}
+
 export async function getLastPulledAt(): Promise<string | null> {
   const storage = await getDataStorage();
   return storage.getString(META_LAST_PULLED_AT) ?? null;

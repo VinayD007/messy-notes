@@ -16,6 +16,7 @@ import {
   getWebLastPulledAt,
   getWebOutboxMutations,
   getWebPhotoOutboxEntries,
+  reconcileWebRemoteNoteIds,
   recordWebOutboxRetry,
   removeWebPhotoOutboxEntry,
   removeWebRemoteHardDeleted,
@@ -49,7 +50,10 @@ class WebOfflineSyncEngine {
   private userId: string | null = null;
   private callbacks: WebSyncCallbacks | null = null;
   private channel: RealtimeChannel | null = null;
+  private channelGeneration = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private realtimeReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private fallbackPollTimer: ReturnType<typeof setInterval> | null = null;
   private removeListeners: (() => void) | null = null;
 
   private isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -59,18 +63,35 @@ class WebOfflineSyncEngine {
 
   private readonly remote = createSupabaseNotesRemote(supabase);
 
+  private async authenticateRealtime(): Promise<void> {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        await supabase.realtime.setAuth(data.session.access_token);
+      }
+    } catch {
+      // Realtime auth falls back to current client session when refreshed.
+    }
+  }
+
   async start(userId: string, callbacks: WebSyncCallbacks): Promise<void> {
     this.stop();
+    const startGen = this.channelGeneration;
     this.userId = userId;
     this.callbacks = callbacks;
     this.isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
     await ensureActiveWebUser(userId);
+    if (this.userId !== userId || startGen !== this.channelGeneration) return;
     await this.emitLocalSnapshot();
+    if (this.userId !== userId || startGen !== this.channelGeneration) return;
 
     const handleOnline = () => {
       this.isOnline = true;
       this.emitStatus(false, null);
+      if (this.realtimeStatus !== 'connected') {
+        void this.ensureRealtimeSubscribed();
+      }
       void this.syncNow();
     };
 
@@ -78,11 +99,15 @@ class WebOfflineSyncEngine {
       this.isOnline = false;
       this.realtimeStatus = 'offline';
       this.clearRetryTimer();
+      this.clearRealtimeTimers();
       this.emitStatus(false, null);
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && this.isOnline) {
+        if (this.realtimeStatus !== 'connected') {
+          void this.ensureRealtimeSubscribed();
+        }
         void this.syncNow();
       }
     };
@@ -96,9 +121,11 @@ class WebOfflineSyncEngine {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
 
-    this.subscribeRealtime(userId);
-
     if (this.isOnline) {
+      await this.authenticateRealtime();
+      if (this.userId !== userId || startGen !== this.channelGeneration) return;
+      this.subscribeRealtime(userId);
+      this.ensureFallbackPoll();
       void this.syncNow();
     } else {
       this.realtimeStatus = 'offline';
@@ -107,7 +134,9 @@ class WebOfflineSyncEngine {
   }
 
   stop(): void {
+    this.channelGeneration += 1;
     this.clearRetryTimer();
+    this.clearRealtimeTimers();
     if (this.removeListeners) {
       this.removeListeners();
       this.removeListeners = null;
@@ -205,39 +234,79 @@ class WebOfflineSyncEngine {
     }
   }
 
+  private async ensureRealtimeSubscribed(): Promise<void> {
+    if (!this.userId || !this.isOnline) return;
+    await this.authenticateRealtime();
+    if (!this.userId || !this.isOnline) return;
+    this.subscribeRealtime(this.userId);
+  }
+
   private subscribeRealtime(userId: string): void {
-    let hasSubscribedOnce = false;
+    const generation = ++this.channelGeneration;
+    if (this.channel) {
+      void supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+
     this.realtimeStatus = this.isOnline ? 'connecting' : 'offline';
     this.emitStatus(this.syncInFlight, null);
 
+    const onChange = (payload: {
+      eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+      new: Record<string, unknown>;
+      old: Record<string, unknown>;
+    }) => {
+      if (generation !== this.channelGeneration || this.userId !== userId) return;
+      void this.handleRealtimePayload(payload);
+    };
+
     const channel = supabase
-      .channel(`notes:user:${userId}`)
+      .channel(`notes:user:${userId}:${generation}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'notes',
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => {
-          void this.handleRealtimePayload(payload);
-        }
+        onChange
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notes',
+          filter: `user_id=eq.${userId}`,
+        },
+        onChange
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'notes',
+        },
+        onChange
       )
       .subscribe((status) => {
+        if (generation !== this.channelGeneration || this.userId !== userId) return;
+
         if (status === 'SUBSCRIBED') {
           this.realtimeStatus = 'connected';
+          this.clearRealtimeReconnectTimer();
+          this.clearFallbackPollTimer();
           this.emitStatus(this.syncInFlight, null);
-          if (hasSubscribedOnce) {
-            void this.syncNow();
-          }
-          hasSubscribedOnce = true;
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void this.syncNow();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           this.realtimeStatus = this.isOnline ? 'reconnecting' : 'offline';
           this.emitStatus(this.syncInFlight, null);
-        } else if (status === 'CLOSED') {
-          this.realtimeStatus = this.isOnline ? 'idle' : 'offline';
-          this.emitStatus(this.syncInFlight, null);
+          if (this.isOnline) {
+            this.ensureFallbackPoll();
+            this.scheduleRealtimeReconnect(userId, generation);
+          }
         }
       });
 
@@ -305,6 +374,60 @@ class WebOfflineSyncEngine {
     } else if (!lastPulledAt) {
       await setWebLastPulledAt(new Date().toISOString());
     }
+
+    const { data: remoteIds, error: idsError } = await supabase
+      .from('notes')
+      .select('id')
+      .eq('user_id', userId);
+    if (!idsError && remoteIds) {
+      await reconcileWebRemoteNoteIds(
+        userId,
+        new Set(remoteIds.map((row) => row.id))
+      );
+    }
+  }
+
+  private clearRealtimeReconnectTimer(): void {
+    if (this.realtimeReconnectTimer) {
+      clearTimeout(this.realtimeReconnectTimer);
+      this.realtimeReconnectTimer = null;
+    }
+  }
+
+  private clearFallbackPollTimer(): void {
+    if (this.fallbackPollTimer) {
+      clearInterval(this.fallbackPollTimer);
+      this.fallbackPollTimer = null;
+    }
+  }
+
+  private clearRealtimeTimers(): void {
+    this.clearRealtimeReconnectTimer();
+    this.clearFallbackPollTimer();
+  }
+
+  private ensureFallbackPoll(): void {
+    if (this.fallbackPollTimer || !this.isOnline) return;
+    this.fallbackPollTimer = setInterval(() => {
+      if (this.userId && this.isOnline && this.realtimeStatus !== 'connected') {
+        void this.syncNow();
+      }
+    }, 25_000);
+  }
+
+  private scheduleRealtimeReconnect(userId: string, generation: number): void {
+    this.clearRealtimeReconnectTimer();
+    this.realtimeReconnectTimer = setTimeout(() => {
+      this.realtimeReconnectTimer = null;
+      if (
+        this.userId === userId &&
+        this.isOnline &&
+        generation === this.channelGeneration &&
+        this.realtimeStatus !== 'connected'
+      ) {
+        void this.ensureRealtimeSubscribed();
+      }
+    }, 3_000);
   }
 
   private async emitLocalSnapshot(): Promise<void> {

@@ -293,6 +293,32 @@ export async function removeWebRemoteHardDeleted(noteId: string): Promise<void> 
   await webLocalDb.notes.delete(noteId);
 }
 
+export async function reconcileWebRemoteNoteIds(
+  userId: string,
+  remoteIds: ReadonlySet<string>
+): Promise<void> {
+  await webLocalDb.transaction(
+    'rw',
+    webLocalDb.notes,
+    webLocalDb.outbox,
+    async () => {
+      const cached = await webLocalDb.notes.where('user_id').equals(userId).toArray();
+      const staleIds: string[] = [];
+      for (const record of cached) {
+        if (record.serverUpdatedAt === null) continue;
+        if (remoteIds.has(record.id)) continue;
+        const pending = await webLocalDb.outbox.get(record.id);
+        if (!pending) {
+          staleIds.push(record.id);
+        }
+      }
+      if (staleIds.length > 0) {
+        await webLocalDb.notes.bulkDelete(staleIds);
+      }
+    }
+  );
+}
+
 export async function getWebLastPulledAt(): Promise<string | null> {
   const record = await webLocalDb.meta.get('last_pulled_at');
   return record?.value ?? null;

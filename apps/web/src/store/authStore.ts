@@ -47,6 +47,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       .getSession()
       .then(({ data, error }) => {
         if (!active) return;
+        if (data.session?.access_token) {
+          void supabase.realtime.setAuth(data.session.access_token);
+        }
         set({
           session: data.session ?? null,
           user: data.session?.user ?? null,
@@ -70,6 +73,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
+      if (session?.access_token) {
+        void supabase.realtime.setAuth(session.access_token);
+      }
       set({
         session: session ?? null,
         user: session?.user ?? null,

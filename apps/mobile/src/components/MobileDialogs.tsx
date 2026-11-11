@@ -368,30 +368,6 @@ export function MobileOptionsSheet({
           </View>
 
           <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
-            {liveNote.type === 'regular' && liveNote.content.body.trim() ? (
-              <ScrollView
-                style={[
-                  styles.sheetPreviewBox,
-                  { backgroundColor: palette.bg, borderColor: palette.outlineVariant },
-                ]}
-                nestedScrollEnabled
-              >
-                <MobilePlainTextView
-                  body={liveNote.content.body}
-                  spans={liveNote.content.spans}
-                  palette={palette}
-                  onCopyMono={(snippet) => {
-                    void Clipboard.setStringAsync(snippet);
-                    showSnackbar({ message: `Copied: ${snippet}` });
-                  }}
-                  onOpenLink={(href) => {
-                    onClose();
-                    onRequestOpenLink?.(href);
-                  }}
-                />
-              </ScrollView>
-            ) : null}
-
             {isBin ? (
               <>
                 <SheetAction
@@ -1622,13 +1598,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     ...MessNoteTypography.bodyLarge,
-  },
-  sheetPreviewBox: {
-    maxHeight: 200,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 8,
   },
   detailScrollContent: {
     padding: 18,

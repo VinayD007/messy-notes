@@ -1392,7 +1392,7 @@ export function FeedScreen() {
               >
                 <MaterialIcons
                   name="add"
-                  size={20}
+                  size={22}
                   color={plusMenuOpen ? palette.onAccent : palette.onPrimaryContainer}
                 />
               </Animated.View>
@@ -1415,7 +1415,7 @@ export function FeedScreen() {
               value={draftText}
               onChangeText={setDraftText}
               onFocus={() => setPlusMenuOpen(false)}
-              placeholder="write a note..."
+              placeholder="Start a Note..."
               placeholderTextColor={palette.textMuted}
             />
 
@@ -1429,7 +1429,7 @@ export function FeedScreen() {
             >
               <MaterialIcons
                 name="attach-file"
-                size={21}
+                size={22}
                 color={palette.textSecondary}
               />
             </Pressable>
@@ -1451,7 +1451,7 @@ export function FeedScreen() {
             >
               <MaterialIcons
                 name="arrow-forward"
-                size={20}
+                size={22}
                 color={palette.onAccent}
               />
             </Pressable>
@@ -2166,8 +2166,8 @@ const styles = StyleSheet.create({
   },
   floatingOverlay: {
     position: 'absolute',
-    right: MessNoteMetrics.outerGutter + 9,
-    bottom: 136,
+    right: MessNoteMetrics.outerGutter + 5,
+    bottom: 140,
     zIndex: 30,
     elevation: 16,
     alignItems: 'flex-end',
@@ -2203,7 +2203,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingRight: 9,
+    paddingRight: 5,
     gap: MessNoteMetrics.intraSpacing,
   },
   composerDraftPhotosWrap: {
@@ -2221,21 +2221,21 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   floatingBottomBar: {
-    minHeight: MessNoteMetrics.fabSize,
+    minHeight: 58,
     borderWidth: 1,
     borderRadius: 999,
     paddingLeft: MessNoteMetrics.outerGutter,
-    paddingRight: 8,
-    paddingVertical: 6,
+    paddingRight: 4,
+    paddingVertical: 4,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: 6,
     elevation: 6,
   },
   composerInput: {
     flex: 1,
     ...MessNoteTypography.bodyLarge,
-    minHeight: 44,
+    minHeight: 48,
     maxHeight: 120,
     paddingTop: 10,
     paddingBottom: 10,
@@ -2244,15 +2244,15 @@ const styles = StyleSheet.create({
   },
   pillSmallBtn: {
     width: 44,
-    height: 44,
-    borderRadius: 22,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bottomActionBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
