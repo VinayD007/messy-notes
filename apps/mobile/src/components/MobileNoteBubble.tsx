@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   isNoteEdited,
   MessNoteFontFamily,
   MessNoteMetrics,
+  MessNoteMotion,
   MessNoteTypography,
   NOTE_PHOTOS_BUCKET,
   type MessyNotePalette,
@@ -43,6 +44,15 @@ export function MobileNoteBubble({
 }: Props) {
   const { toggleSelectNote, showSnackbar } = useNotesStore();
   const [resolvedUris, setResolvedUris] = useState<Record<string, string>>({});
+  const pressScale = useRef(new Animated.Value(1)).current;
+
+  const animatePress = (toValue: number) => {
+    Animated.spring(pressScale, {
+      toValue,
+      ...MessNoteMotion.expressiveFast,
+      useNativeDriver: true,
+    }).start();
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -88,27 +98,30 @@ export function MobileNoteBubble({
   };
 
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.bubble,
-        {
-          backgroundColor: isSelected
-            ? palette.selectedItemBackground
-            : palette.noteBubbleBackground,
-          borderColor: palette.noteBubbleAccent,
-          borderWidth: isSelected ? 1.5 : 1,
-        },
-        pressed && { backgroundColor: palette.selectedItemBackground },
-      ]}
-      onPress={() => {
-        if (selectionMode) {
-          toggleSelectNote(note.id);
-        } else {
-          onOpenOptions(note);
-        }
-      }}
-      onLongPress={() => toggleSelectNote(note.id)}
-    >
+    <Animated.View style={{ transform: [{ scale: pressScale }] }}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.bubble,
+          {
+            backgroundColor: isSelected
+              ? palette.selectedItemBackground
+              : palette.noteBubbleBackground,
+            borderColor: isSelected ? palette.noteBubbleAccent : palette.outlineVariant,
+            borderWidth: isSelected ? 1.5 : 1,
+          },
+          pressed && { backgroundColor: palette.selectedItemBackground },
+        ]}
+        onPressIn={() => animatePress(MessNoteMotion.pressScale)}
+        onPressOut={() => animatePress(1)}
+        onPress={() => {
+          if (selectionMode) {
+            toggleSelectNote(note.id);
+          } else {
+            onOpenOptions(note);
+          }
+        }}
+        onLongPress={() => toggleSelectNote(note.id)}
+      >
       <View style={styles.topRow}>
         <View style={styles.leftBadges}>
           {note.type !== 'regular' ? (
@@ -277,7 +290,8 @@ export function MobileNoteBubble({
         })}
         {isNoteEdited(note) ? ' · edited' : ''}
       </Text>
-    </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -285,8 +299,8 @@ const styles = StyleSheet.create({
   bubble: {
     borderWidth: 1,
     borderRadius: MessNoteMetrics.noteCardCornerRadius,
-    padding: 16,
-    gap: 10,
+    padding: MessNoteMetrics.outerGutter,
+    gap: MessNoteMetrics.intraSpacing,
   },
   topRow: {
     flexDirection: 'row',
@@ -320,7 +334,6 @@ const styles = StyleSheet.create({
   },
   pendingTag: {
     ...MessNoteTypography.labelMedium,
-    color: '#FFD60A',
   },
   pinBadge: {
     fontFamily: MessNoteFontFamily.regular,

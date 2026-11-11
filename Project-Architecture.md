@@ -19,49 +19,50 @@ messy-notes/
 
 ---
 
-## 2. Mobile Material 3 Design System (`packages/shared/src/theme/tokens.ts`)
+## 2. Mobile Material 3 Expressive Design System (`packages/shared/src/theme/tokens.ts`)
 
-All visual tokens for `apps/mobile` are centralized in `DarkMessNoteColors`, `LightMessNoteColors`, `MessNoteMetrics`, and `MessNoteTypography`.
+All visual, shape, motion, and typography tokens are centralized in `DarkMessNoteColors`, `LightMessNoteColors`, `MessNoteMetrics`, `MessNoteMotion`, and `MessNoteTypography` (seeded from **Violet Expressive `#6750A4`** in Dark Mode for 412dp mobile viewports with 16dp outer gutters and 8dp intra-component spacing).
 
-### 2.1 Dark OLED Color Tokens (`DarkMessNoteColors`)
+### 2.1 Violet Expressive Dark Color Tokens (`DarkMessNoteColors`)
 
 | Role | Token | Hex / Value | Usage |
 | :--- | :--- | :--- | :--- |
-| Screen Background | `bg` | `#000000` | Pure OLED canvas across Auth, Feed, Search, Detail, Editor screens |
-| Primary Surfaces | `headerBg`, `surfaceCard`, `surfaceContainer`, `surfaceContainerLow` | `#1C1C1E` | Top app bars, navigation drawer, bottom sheets, confirmation dialogs, composer dock, structured editor cards |
-| Raised Surfaces | `surfaceElevated`, `surfaceContainerHigh`, `surfaceContainerHighest`, `secondaryContainer`, `monospaceBg` | `#2C2C2E` | Search bar pills, filter chips (unselected), quick-note pills, snackbars, monospace copy pills, cancel/secondary buttons |
-| Primary Accent | `noteBubbleAccent`, `linkAccent`, `monospaceText`, `onPrimaryContainer` | `#FFD60A` | Primary CTAs (`+` FAB, Send, Save), note bubble outlines, active filter chip fill, active drawer label, favorites star, pin badge, inline code/links |
-| Content on Accent | `onAccent` | `#000000` | Icons and bold labels placed on `#FFD60A` fills |
-| Primary Text | `textPrimary`, `onSecondaryContainer` | `#FFFFFF` | Note body copy, titles, primary dialog headlines, secondary button text, drawer nav labels |
-| Secondary Text | `textSecondary` | `#B0B0B5` | Subtitles, dialog body descriptions, category pill labels, nav icons |
-| Muted Text | `textMuted` | `#8E8E93` | Input placeholders, timestamps, drag handles, inactive favorite outline star, drawer email |
-| Outlines & Hairlines | `borderSubtle`, `outlineVariant` | `#38383A` | Surface card borders, chip hairlines, composer pill outlines (divider-free floating headers, filter rows, and composer dock) |
-| Tonal / Selected Fill | `primaryContainer`, `selectedItemBackground` | `rgba(255, 214, 10, 0.16)` / `rgba(255, 214, 10, 0.14)` | Active drawer destination pill, active favorite button background, selected note fill |
-| Destructive Actions | `destructiveAction` | `#FF453A` | Delete, Delete permanently, Empty bin (`Delete all`), Discard changes, Sign out (never uses `#FFD60A`) |
-| Note Bubble Fill | `noteBubbleBackground` | `transparent` | Transparent note cards outlined with `#FFD60A` directly on the `#000000` OLED canvas |
+| Screen Background | `bg`, `headerBg` | `#0F0D13` | Obsidian-violet canvas across Auth, Feed, Search, Detail, Editor screens |
+| Primary Surfaces | `surfaceCard`, `surfaceContainer`, `surfaceContainerLow` | `#1D1B20` / `#211F26` / `#19171D` | Navigation drawer, bottom sheets, dialogs, structured editor cards |
+| Raised Surfaces | `surfaceElevated`, `surfaceContainerHigh`, `surfaceContainerHighest`, `monospaceBg` | `#2B2930` / `#36343B` | Floating pill BottomAppBar, search bar pills, unselected filter chips, snackbars, monospace pills |
+| Primary Accent | `noteBubbleAccent`, `linkAccent`, `monospaceText` | `#D0BCFF` | Primary CTAs (Send, Save, Split action active state), selected note borders, active filter chips, status indicators |
+| Content on Accent | `onAccent` | `#381E72` | High-contrast labels and icons rendered on `#D0BCFF` fills |
+| Hero / Primary Container | `primaryContainer` / `onPrimaryContainer` | `#4F378B` / `#EADDFF` | Hero `SplitActionButton`, active drawer item fill, expressive sync loading pill, active option toggles |
+| Secondary Container | `secondaryContainer` / `onSecondaryContainer` | `#4A4458` / `#E8DEF8` | Theme switch icon button and secondary tonal controls |
+| Primary Text | `textPrimary` | `#F5EFF7` | Note body copy, headlines, dialog titles, drawer items |
+| Secondary / Muted Text | `textSecondary` / `textMuted` | `#CAC4D0` / `#938F99` | Subtitles, descriptions, placeholders, timestamps |
+| Outlines & Hairlines | `borderSubtle`, `outlineVariant` | `#49454F` | Floating BottomAppBar pill outline, surface card borders, chip hairlines |
+| Selected Tonal Fill | `selectedItemBackground` | `rgba(208, 188, 255, 0.2)` | Selected note fill and press state overlay |
+| Destructive Actions | `destructiveAction` | `#FF5449` | Delete, Delete permanently, Empty bin (`Delete all`), Discard changes, Sign out |
+| Note Bubble Fill | `noteBubbleBackground` | `#1B1822` | High-contrast tonal note cards with `24dp` rounded corners |
 
-### 2.2 Shape & Layout Metrics (`MessNoteMetrics`)
+### 2.2 Shape, Rhythm & Spring Motion Tokens (`MessNoteMetrics`, `MessNoteMotion`)
 
 | Token | Value | Application |
 | :--- | :--- | :--- |
-| `dialogCornerRadius` | `28dp` | M3 confirmation cards (`MobileConfirmDialog`), Partial Copy dialog, Auth card, Bottom Sheet top corners, Navigation Drawer right corners |
-| `noteCardCornerRadius` | `16dp` | Feed note bubbles (`MobileNoteBubble`) with `1dp` (`1.5dp` selected) `#FFD60A` border and transparent fill |
-| `composerCornerRadius` | `28dp` | Bottom text composer input pill |
-| `fabSize` / `fabCornerRadius` | `52dp` / `26dp` | Circular `52dp` `+` FAB and `52dp` Send action button |
-| Full Pill | `999` | Filter chips, search bars, action buttons, confirmation pills, format toolbar chips |
-| `headerRowHeight` | `64dp` (`minHeight`) | Flexible app bar height accommodating multi-line and `1.3x` scaled typography |
+| `outerGutter` / `intraSpacing` | `16dp` / `8dp` | Consistent 16dp outer gutters and 8dp intra-component spacing across CenterAligned TopAppBar, Hero SplitActionButton, Filter chips, Note cards, Floating Pill BottomAppBar |
+| `dialogCornerRadius` / `heroCornerRadius` | `32dp` / `30dp` | M3E dialogs, bottom sheet top corners, floating pill BottomAppBar |
+| `splitButtonOuterRadius` / `splitButtonInnerRadius` | `28dp` / `10dp` (morphs to `28dp`) | Shape-morphing M3E Hero `SplitActionButton` seam |
+| `noteCardCornerRadius` | `24dp` | Feed note bubbles (`MobileNoteBubble`) with spring press scale (`0.96`) |
+| `fabSize` / `fabCornerRadius` | `56dp` / `18dp` (morphs to `22dp`) | Expressive squircle/pill quick-create action in floating BottomAppBar |
+| `MessNoteMotion` | `expressiveFast` (`360/19`), `expressiveSpatial` (`240/18`) | M3E bouncy spring physics for card press feedback, Hero split action, drawer transitions, and morphing `+` menu pills |
 
 ### 2.3 Typographic Hierarchy & Accessibility Scaling (`MessNoteTypography`)
 
-Both Web (`apps/web/index.html` Google Fonts stylesheet + `--font-sans: 'Google Sans', Roboto, sans-serif`) and Android (`apps/mobile/android/app/src/main/res/font/google_sans.xml` bundling `400`, `500`, `600`, and `700` `.ttf` weights registered via `ReactFontManager` in `MainActivity.kt` and `MessNoteFontFamily.regular = 'Google Sans'`) use `'Google Sans'` as the primary default font family across headers, body copy, inputs, dialogs, and controls, while preserving generous line heights (`lineHeight >= 1.35 * fontSize`) and flexible containers up to `1.3x` accessibility scaling (with explicit `monospace` preserved for code/tap-to-copy snippets):
+Both Web (`apps/web/index.html` Google Fonts stylesheet + `--font-sans: 'Google Sans', Roboto, sans-serif`) and Android (`apps/mobile/android/app/src/main/res/font/google_sans.xml` bundling `400`, `500`, `600`, and `700` `.ttf` weights registered via `ReactFontManager` in `MainActivity.kt` and `MessNoteFontFamily.regular = 'Google Sans'`) use `'Google Sans'` with the M3E Emphasized type scale (tighter tracking and stronger headline weight contrast):
 
-- `displayHeadline`: `28sp` / `36` (`700`) — Auth title
-- `titleLarge`: `22sp` / `30` (`700`) — Screen titles (`MessyNotes`, `Favorites`, `Bin`), drawer title, M3 dialog titles
-- `titleMedium`: `16sp` / `24` (`600`) — Note titles, bottom sheet header, empty state headlines
-- `bodyLarge`: `16sp` / `24` (`400`) — Composer text input, form inputs, sheet rows, drawer nav items
-- `bodyMedium`: `14sp` / `21` (`400`) — Structured field/list rows, dialog descriptions, snackbar messages
-- `labelLarge`: `14sp` / `20` (`600`) — Filter chips, action pill buttons, confirmation buttons
-- `labelMedium`: `12sp` / `17` (`600`) — Status indicators, timestamps, category chips, editor mode pills
+- `displayHeadline`: `30sp` / `36` (`700`, tracking `-0.8`) — Auth display headline
+- `titleLarge`: `22sp` / `28` (`700`, tracking `-0.45`) — CenterAligned TopAppBar title (`MessyNotes`, `Favorites`, `Bin`), drawer title, M3E dialog titles
+- `titleMedium`: `16sp` / `22` (`700`, tracking `-0.15`) — Note titles, bottom sheet header, empty state headlines
+- `bodyLarge`: `16sp` / `24` (`400`, tracking `0`) — Composer text input, form inputs, sheet rows, drawer nav items
+- `bodyMedium`: `14sp` / `20` (`400`, tracking `0.05`) — Structured field/list rows, dialog descriptions, snackbar messages
+- `labelLarge`: `14sp` / `20` (`700`, tracking `0.05`) — Hero SplitActionButton, filter chips, action pill buttons, confirmation buttons
+- `labelMedium`: `12sp` / `16` (`600`, tracking `0.2`) — Status pills, timestamps, category chips, editor mode pills
 
 ---
 
@@ -69,27 +70,18 @@ Both Web (`apps/web/index.html` Google Fonts stylesheet + `--font-sans: 'Google 
 
 ```text
 App.tsx (SafeAreaProvider, StatusBar, auth/sync bootstrap)
-├── AuthScreen.tsx (OLED #000000 + #1C1C1E 28dp card + pill Sign In / Sign Up)
+├── AuthScreen.tsx (Violet Expressive Dark #0F0D13 + #1D1B20 32dp card + pill Sign In / Sign Up)
 └── FeedScreen.tsx (Home, Favorites, Bin, Search, Multi-select, Drawer overlay)
-    ├── Top Headers (Home / Favorites / Bin / Pill Search Bar / Selection Bar; Expand Editor button placed left of Search icon)
-    ├── Horizontal Filter Chips ScrollView (All, Notes, Fields-Values, Lists)
-    ├── FlatList<Note> -> MobileNoteBubble.tsx (16dp transparent #FFD60A cards)
+    ├── CenterAligned TopAppBar (Left Menu/Back squircle, Centered Title + M3E status badge/loader, Right Expand Editor & Search)
+    ├── Hero SplitActionButton Row (48dp tonal violet #4F378B split button: New Rich Note + morphing quick-create toggle)
+    ├── Horizontal Filter Chips ScrollView (All, Notes, Fields-Values, Lists; 16dp gutter, 8dp gap)
+    ├── Expressive Sync Pill Loader (animated rotating squircle indicator during sync)
+    ├── FlatList<Note> -> MobileNoteBubble.tsx (24dp tonal #1B1822 cards with spring press scale)
     │   └── MobilePlainTextView.tsx (Plain text + explicit monospace copy spans + clickable URLs)
-    ├── Empty States & M3 Floating Snackbar (#2C2C2E raised banner + #FFD60A Undo)
-    ├── Fullscreen Photo Viewer Modal (Top-right Download button -> MediaLibrary gallery save + feedback)
-    ├── Plus Menu Dimmed Scrim (.plusMenuScrim: tapping outside menu dismisses immediately)
-    ├── Single 52dp Floating '+' FAB (opens strictly 2 options: Field-Value and List; dismisses keyboard)
-    ├── Bottom Composer Dock (#1C1C1E surface, rounded pill + Clip, 52dp circular Send; focusing input collapses + menu)
-    ├── Animated Navigation Drawer (#1C1C1E surface, 28dp right corners, pan-to-close)
-    │   └── Bottom Pill Section (App URL pill [URL, Open Link, Copy] + Account pill [Email, Sign out])
-    └── MobileDialogs.tsx
-        ├── MobileConfirmDialog (28dp M3 dialog: red #FF453A destructive / white cancel)
-        ├── MobileOptionsSheet (28dp top-radius bottom sheet + top-bar instant Pin & Star toggles across all note types)
-        ├── MobileNoteDetailModal (Fullscreen plain-text viewer + monospace tap-to-copy fields)
-        ├── MobileRegularEditorModal (Fullscreen plain-text editor + Mono selection toggle)
-        ├── MobileFieldValueModal (Structured field = value builder + discard dialog)
-        ├── MobileListModal (Numbered list builder + discard dialog)
-        └── MobilePartialCopyModal (28dp dialog with selectable #2C2C2E pill tokens)
+    ├── Plus Menu Dimmed Scrim + Spring-Animated Quick Pills (Field-Value & List above Floating Pill BottomAppBar)
+    ├── Floating Pill BottomAppBar (999dp pill in #2B2930: "Write a note...", Attach, Send CTA, morphing '+' FAB menu trigger)
+    ├── Spring-Animated Navigation Drawer (#1D1B20 surface, 32dp right corners, pan-to-close)
+    └── MobileDialogs.tsx (32dp M3E dialogs, bottom sheets with top-bar Pin/Star toggles, plain-text/structured editors)
 ```
 
 ### 3.1 Confirmation Flows (`MobileConfirmDialog`)
