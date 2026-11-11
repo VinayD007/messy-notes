@@ -1,5 +1,4 @@
 import {
-  DEFAULT_WEB_APP_URL,
   buildGroupedText,
   type Note,
   type NoteFilter,
@@ -9,12 +8,10 @@ import { useNotesStore } from '../store/notesStore';
 import {
   ArrowBackIcon,
   CloseIcon,
-  ContentCopyIcon,
   DarkModeIcon,
   LightModeIcon,
   MenuIcon,
   OpenInFullIcon,
-  OpenInNewIcon,
   SearchIcon,
 } from './MaterialIcons';
 
@@ -303,19 +300,9 @@ export function NavigationDrawer({
     activeView,
     setActiveView,
     reset,
-    showSnackbar,
   } = useNotesStore();
 
   if (!persistent && !open) return null;
-
-  const liveAppUrl =
-    (import.meta.env.VITE_WEB_APP_URL as string | undefined)?.trim() ||
-    DEFAULT_WEB_APP_URL;
-
-  const handleCopyAppUrl = async () => {
-    await navigator.clipboard.writeText(liveAppUrl);
-    showSnackbar({ message: 'Copied app URL to clipboard' });
-  };
 
   const handleNavigate = (view: 'home' | 'favorites' | 'bin') => {
     setActiveView(view);
@@ -354,10 +341,23 @@ export function NavigationDrawer({
         <button
           type="button"
           className={`drawer-item ${activeView === 'home' ? 'active' : ''}`}
+          aria-expanded={activeView === 'home'}
           onClick={() => handleNavigate('home')}
         >
           All Notes
         </button>
+        {activeView === 'home' && (
+          <div
+            className="drawer-nested-filters"
+            role="group"
+            aria-label="All Notes filters"
+          >
+            <HomeFilterBar
+              vertical
+              onAfterSelect={persistent ? undefined : onClose}
+            />
+          </div>
+        )}
         <button
           type="button"
           className={`drawer-item ${activeView === 'favorites' ? 'active' : ''}`}
@@ -374,43 +374,7 @@ export function NavigationDrawer({
         </button>
       </div>
 
-      <div className="drawer-section">
-        <span className="drawer-section-label">Filter</span>
-        <HomeFilterBar
-          vertical
-          onAfterSelect={persistent ? undefined : onClose}
-        />
-      </div>
-
       <div className="drawer-footer-group">
-        <div className="drawer-url-card drawer-pill-container">
-          <span className="drawer-url-text" title={liveAppUrl}>
-            {liveAppUrl}
-          </span>
-          <div className="drawer-url-actions">
-            <button
-              type="button"
-              className="drawer-url-btn"
-              aria-label="Open web app in new tab"
-              title="Open web app"
-              onClick={() =>
-                window.open(liveAppUrl, '_blank', 'noopener,noreferrer')
-              }
-            >
-              <OpenInNewIcon size={16} />
-            </button>
-            <button
-              type="button"
-              className="drawer-url-btn"
-              aria-label="Copy app URL"
-              title="Copy URL"
-              onClick={() => void handleCopyAppUrl()}
-            >
-              <ContentCopyIcon size={16} />
-            </button>
-          </div>
-        </div>
-
         <div className="drawer-footer drawer-pill-container">
           <span className="drawer-user-email" title={user?.email ?? ''}>
             {user?.email}

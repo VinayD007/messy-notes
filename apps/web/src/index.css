@@ -1003,6 +1003,22 @@ textarea {
   color: var(--accent);
 }
 
+.drawer-nested-filters {
+  margin: 2px 0 4px 16px;
+  padding-left: 12px;
+  border-left: 1px solid var(--outline-variant);
+}
+
+.drawer-nested-filters .filter-bar.filter-bar-vertical {
+  gap: 5px;
+}
+
+.drawer-nested-filters .filter-bar.filter-bar-vertical .filter-pill {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
 .drawer-footer-group {
   margin-top: auto;
   display: flex;
@@ -1010,7 +1026,6 @@ textarea {
   gap: 10px;
 }
 
-.drawer-url-card,
 .drawer-footer,
 .drawer-pill-container {
   background: var(--surface-container-high);
@@ -1022,40 +1037,6 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}
-
-.drawer-url-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.78rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.drawer-url-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.drawer-url-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  border: 1px solid var(--outline-variant);
-  background: var(--surface-container);
-  color: var(--on-secondary-container);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.drawer-url-btn:hover {
-  border-color: var(--accent);
 }
 
 .drawer-user-email {
