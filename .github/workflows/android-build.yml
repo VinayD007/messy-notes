@@ -45,24 +45,26 @@ jobs:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
         run: |
-          url="$(printf '%s' "$EXPO_PUBLIC_SUPABASE_URL" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          key="$(printf '%s' "$EXPO_PUBLIC_SUPABASE_ANON_KEY" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          if [ -z "$url" ] || [ -z "$key" ]; then
-            echo "::error::Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY repository secrets. Configure both in GitHub Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
-          {
-            printf 'EXPO_PUBLIC_SUPABASE_URL=%s\n' "$url"
-            printf 'EXPO_PUBLIC_SUPABASE_ANON_KEY=%s\n' "$key"
-          } > .env
+          node -e '
+            const fs = require("node:fs");
+            const clean = (v) => (v || "").replace(/[\r\n\t\s]+/g, "").replace(/^[\x22\x27]+|[\x22\x27]+$/g, "");
+            const url = clean(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, "");
+            const key = clean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+            if (!/^https?:\/\/.+/.test(url) || !key) {
+              console.error("::error::Missing or invalid EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY repository secrets. Configure both in GitHub Settings -> Secrets and variables -> Actions.");
+              process.exit(1);
+            }
+            fs.writeFileSync(".env", `EXPO_PUBLIC_SUPABASE_URL=${url}\nEXPO_PUBLIC_SUPABASE_ANON_KEY=${key}\n`);
+          '
 
       - name: Build Android Release APK
         working-directory: apps/mobile/android
         env:
           NODE_ENV: production
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
         run: |
+          set -a
+          . ../.env
+          set +a
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 

@@ -22,6 +22,20 @@ interface AuthState {
   clearError: () => void;
 }
 
+function formatAuthErrorMessage(err: unknown, fallback: string): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string'
+        ? err.message
+        : fallback;
+
+  if (/network request failed/i.test(raw)) {
+    return 'Network request failed while connecting to Supabase. Check your internet/DNS connection (if your ISP blocks supabase.co, try Private DNS or another network) and retry.';
+  }
+  return raw;
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   user: null,
@@ -89,22 +103,28 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     set({ loading: true, error: null });
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    if (error) {
-      set({ loading: false, error: error.message });
-      throw error;
+      if (error) {
+        const message = formatAuthErrorMessage(error, 'Sign-in failed');
+        set({ loading: false, error: message });
+        throw error;
+      }
+
+      set({
+        session: data.session,
+        user: data.user,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      set({ loading: false, error: formatAuthErrorMessage(err, 'Sign-in failed') });
+      throw err;
     }
-
-    set({
-      session: data.session,
-      user: data.user,
-      loading: false,
-      error: null,
-    });
   },
 
   signUp: async (email, password) => {
@@ -114,24 +134,30 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     set({ loading: true, error: null });
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
 
-    if (error) {
-      set({ loading: false, error: error.message });
-      throw error;
+      if (error) {
+        const message = formatAuthErrorMessage(error, 'Sign-up failed');
+        set({ loading: false, error: message });
+        throw error;
+      }
+
+      set({
+        session: data.session ?? null,
+        user: data.user ?? null,
+        loading: false,
+        error: null,
+      });
+
+      return { needsEmailConfirmation: !data.session };
+    } catch (err) {
+      set({ loading: false, error: formatAuthErrorMessage(err, 'Sign-up failed') });
+      throw err;
     }
-
-    set({
-      session: data.session ?? null,
-      user: data.user ?? null,
-      loading: false,
-      error: null,
-    });
-
-    return { needsEmailConfirmation: !data.session };
   },
 
   signOut: async () => {

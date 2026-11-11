@@ -73,15 +73,15 @@ const ChunkedSecureStoreAdapter = {
 };
 
 function normalizeEnvValue(raw: string | undefined): string {
-  const trimmed = (raw ?? '').trim();
+  const cleaned = (raw ?? '').replace(/[\r\n\t\s]+/g, '');
   if (
-    trimmed.length >= 2 &&
-    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+    cleaned.length >= 2 &&
+    ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'")))
   ) {
-    return trimmed.slice(1, -1).trim();
+    return cleaned.slice(1, -1);
   }
-  return trimmed;
+  return cleaned;
 }
 
 function isValidHttpUrl(value: string): boolean {
