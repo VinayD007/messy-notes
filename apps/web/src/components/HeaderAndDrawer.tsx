@@ -299,6 +299,11 @@ export function NavigationDrawer({
   const {
     activeView,
     setActiveView,
+    setFilterType,
+    setSearchQueryForActiveView,
+    setSearchActive,
+    clearSelection,
+    triggerManualSync,
     reset,
   } = useNotesStore();
 
@@ -311,6 +316,18 @@ export function NavigationDrawer({
     }
   };
 
+  const handleBrandClick = () => {
+    setActiveView('home');
+    setFilterType('all');
+    setSearchQueryForActiveView('');
+    setSearchActive(false);
+    clearSelection();
+    if (!persistent) {
+      onClose();
+    }
+    void triggerManualSync();
+  };
+
   const drawerContent = (
     <aside
       className={persistent ? 'nav-drawer persistent-sidebar' : 'nav-drawer'}
@@ -318,10 +335,15 @@ export function NavigationDrawer({
       onClick={(e) => e.stopPropagation()}
     >
       <div className="drawer-header">
-        <div className="drawer-brand">
-          <img src="/icon-192.png" alt="MessyNotes" className="drawer-brand-icon" />
+        <a
+          href="/"
+          className="drawer-brand"
+          aria-label="MessyNotes home"
+          onClick={handleBrandClick}
+        >
+          <img src="/icon-192.png" alt="" className="drawer-brand-icon" />
           <strong>MessyNotes</strong>
-        </div>
+        </a>
         <button
           type="button"
           className="theme-switch-btn"
