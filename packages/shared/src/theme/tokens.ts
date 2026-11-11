@@ -101,47 +101,58 @@ export const MessNoteMetrics = {
   themeRevealDurationMs: 400,
 } as const;
 
+export const MessNoteFontFamily = {
+  regular: 'Google Sans',
+  mono: 'monospace',
+} as const;
+
+const withGoogleSans = <T extends Record<string, unknown>>(style: T) =>
+  ({
+    fontFamily: MessNoteFontFamily.regular,
+    ...style,
+  }) as T & { fontFamily: typeof MessNoteFontFamily.regular };
+
 export const MessNoteTypography = {
-  displayHeadline: {
+  displayHeadline: withGoogleSans({
     fontSize: 28,
     lineHeight: 36,
     fontWeight: '700' as const,
     letterSpacing: -0.4,
-  },
-  titleLarge: {
+  }),
+  titleLarge: withGoogleSans({
     fontSize: 22,
     lineHeight: 30,
     fontWeight: '700' as const,
     letterSpacing: -0.2,
-  },
-  titleMedium: {
+  }),
+  titleMedium: withGoogleSans({
     fontSize: 16,
     lineHeight: 24,
     fontWeight: '600' as const,
     letterSpacing: 0.1,
-  },
-  bodyLarge: {
+  }),
+  bodyLarge: withGoogleSans({
     fontSize: 16,
     lineHeight: 24,
     fontWeight: '400' as const,
     letterSpacing: 0.15,
-  },
-  bodyMedium: {
+  }),
+  bodyMedium: withGoogleSans({
     fontSize: 14,
     lineHeight: 21,
     fontWeight: '400' as const,
     letterSpacing: 0.15,
-  },
-  labelLarge: {
+  }),
+  labelLarge: withGoogleSans({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '600' as const,
     letterSpacing: 0.15,
-  },
-  labelMedium: {
+  }),
+  labelMedium: withGoogleSans({
     fontSize: 12,
     lineHeight: 17,
     fontWeight: '600' as const,
     letterSpacing: 0.25,
-  },
+  }),
 } as const;

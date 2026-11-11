@@ -1,5 +1,6 @@
 :root,
 :root[data-theme='dark'] {
+  --font-sans: 'Google Sans', Roboto, sans-serif;
   --bg: #0b0b0f;
   --header-bg: #17171d;
   --surface-card: #17171d;
@@ -61,11 +62,15 @@
   box-sizing: border-box;
 }
 
+:root {
+  font-family: var(--font-sans);
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text-primary);
-  font-family: 'Google Sans Text', 'Google Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   letter-spacing: 0.01em;
   transition: background-color 0.35s ease, color 0.35s ease;

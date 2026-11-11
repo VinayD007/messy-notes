@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   isNoteEdited,
+  MessNoteFontFamily,
   MessNoteMetrics,
   MessNoteTypography,
   NOTE_PHOTOS_BUCKET,
@@ -252,7 +253,15 @@ export function MobileNoteBubble({
                 key={photo.id}
                 style={[styles.photoFallback, { backgroundColor: palette.surfaceCard }]}
               >
-                <Text style={{ color: palette.textMuted, fontSize: 10 }}>N/A</Text>
+                <Text
+                  style={{
+                    color: palette.textMuted,
+                    fontFamily: MessNoteFontFamily.regular,
+                    fontSize: 10,
+                  }}
+                >
+                  N/A
+                </Text>
               </View>
             );
           })}
@@ -306,6 +315,7 @@ const styles = StyleSheet.create({
     ...MessNoteTypography.labelMedium,
   },
   star: {
+    fontFamily: MessNoteFontFamily.regular,
     fontSize: 15,
   },
   pendingTag: {
@@ -313,6 +323,7 @@ const styles = StyleSheet.create({
     color: '#FFD60A',
   },
   pinBadge: {
+    fontFamily: MessNoteFontFamily.regular,
     fontSize: 13,
     transform: [{ rotate: '22deg' }],
   },

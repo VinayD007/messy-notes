@@ -53,7 +53,7 @@ All visual tokens for `apps/mobile` are centralized in `DarkMessNoteColors`, `Li
 
 ### 2.3 Typographic Hierarchy & Accessibility Scaling (`MessNoteTypography`)
 
-Typography follows a clean Google Sans–aligned geometric sans scale with generous line heights (`lineHeight >= 1.35 * fontSize`) and flexible container sizing (`minHeight`, `flexShrink: 1`, `flexWrap: 'wrap'`, `ScrollView` wrapping) so system accessibility font scaling up to `1.3x` renders without text clipping:
+Both Web (`apps/web/index.html` Google Fonts stylesheet + `--font-sans: 'Google Sans', Roboto, sans-serif`) and Android (`apps/mobile/android/app/src/main/res/font/google_sans.xml` bundling `400`, `500`, `600`, and `700` `.ttf` weights registered via `ReactFontManager` in `MainActivity.kt` and `MessNoteFontFamily.regular = 'Google Sans'`) use `'Google Sans'` as the primary default font family across headers, body copy, inputs, dialogs, and controls, while preserving generous line heights (`lineHeight >= 1.35 * fontSize`) and flexible containers up to `1.3x` accessibility scaling (with explicit `monospace` preserved for code/tap-to-copy snippets):
 
 - `displayHeadline`: `28sp` / `36` (`700`) — Auth title
 - `titleLarge`: `22sp` / `30` (`700`) — Screen titles (`MessyNotes`, `Favorites`, `Bin`), drawer title, M3 dialog titles

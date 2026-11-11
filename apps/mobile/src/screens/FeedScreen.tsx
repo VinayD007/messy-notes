@@ -28,6 +28,7 @@ import {
   DarkMessNoteColors,
   LightMessNoteColors,
   MAX_PHOTOS_PER_NOTE,
+  MessNoteFontFamily,
   MessNoteMetrics,
   MessNoteTypography,
   applyPinOrdering,
@@ -58,6 +59,9 @@ import { useNotesStore } from '../store/notesStore';
 
 const FILTER_ORDER: NoteFilter[] = ['all', 'regular', 'field', 'list'];
 const DRAWER_WIDTH = 288;
+const SWIPE_TOUCH_SLOP = 16;
+const SWIPE_TRIGGER_DISTANCE = 64;
+const DRAWER_EDGE_WIDTH = 48;
 const FILTER_LABELS: Record<NoteFilter, string> = {
   all: 'All',
   regular: 'Notes',
@@ -122,29 +126,95 @@ export function FeedScreen() {
   const [confirmDialog, setConfirmDialog] = useState<MobileConfirmConfig | null>(null);
 
   const listRef = useRef<FlatList<Note> | null>(null);
+  const filterScrollRef = useRef<ScrollView | null>(null);
+  const filterChipLayoutsRef = useRef<
+    Partial<Record<NoteFilter, { x: number; width: number }>>
+  >({});
+  const filterBarOpacity = useRef(
+    new Animated.Value(activeView === 'home' ? 1 : 0)
+  ).current;
   const composerInputRef = useRef<TextInput | null>(null);
   const drawerTranslateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
+  const drawerAnimatingRef = useRef(false);
+  const activeFilterRef = useRef<NoteFilter>(filterType);
+  const swipeTriggeredRef = useRef(false);
+  activeFilterRef.current = filterType;
   const liveAppUrl = process.env.EXPO_PUBLIC_WEB_APP_URL?.trim() || DEFAULT_WEB_APP_URL;
 
+  const selectionMode = selectedNoteIds.size > 0;
+  const hasModalOverlayOpen =
+    composerExpanded ||
+    optionsNote !== null ||
+    detailNote !== null ||
+    editingNote !== null ||
+    newFieldOpen ||
+    newListOpen ||
+    partialCopyNote !== null ||
+    previewPhotoUri !== null ||
+    confirmDialog !== null;
+
+  // Unified gesture state mirroring ModalNavigationDrawer gesturesEnabled & list swipe flag.
+  const drawerGesturesEnabled =
+    !hasModalOverlayOpen &&
+    !selectionMode &&
+    !searchActive &&
+    ((activeView === 'home' && filterType === 'all') ||
+      activeView === 'favorites' ||
+      activeView === 'bin');
+  const listSwipeEnabled =
+    activeView === 'home' && !hasModalOverlayOpen && !selectionMode;
+
+  const openDrawer = useCallback(() => {
+    if (
+      drawerOpen ||
+      drawerAnimatingRef.current ||
+      hasModalOverlayOpen ||
+      selectionMode
+    ) {
+      return;
+    }
+    composerInputRef.current?.blur();
+    Keyboard.dismiss();
+    setPlusMenuOpen(false);
+    setDrawerOpen(true);
+  }, [drawerOpen, hasModalOverlayOpen, selectionMode]);
+
   const closeDrawerSmoothly = useCallback(() => {
+    if (!drawerOpen || drawerAnimatingRef.current) return;
+    drawerAnimatingRef.current = true;
     Animated.timing(drawerTranslateX, {
       toValue: -DRAWER_WIDTH,
       duration: 180,
       useNativeDriver: true,
     }).start(() => {
+      drawerAnimatingRef.current = false;
       setDrawerOpen(false);
     });
-  }, [drawerTranslateX]);
+  }, [drawerOpen, drawerTranslateX]);
 
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!drawerOpen) {
+      drawerAnimatingRef.current = false;
+      return;
+    }
+    drawerAnimatingRef.current = true;
     drawerTranslateX.setValue(-DRAWER_WIDTH);
     Animated.timing(drawerTranslateX, {
       toValue: 0,
       duration: 210,
       useNativeDriver: true,
-    }).start();
+    }).start(() => {
+      drawerAnimatingRef.current = false;
+    });
   }, [drawerOpen, drawerTranslateX]);
+
+  useEffect(() => {
+    Animated.timing(filterBarOpacity, {
+      toValue: activeView === 'home' ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [activeView, filterBarOpacity]);
 
   useEffect(() => {
     const val = getPreference('theme_mode');
@@ -172,15 +242,11 @@ export function FeedScreen() {
     setPreference('theme_mode', next);
   };
 
-  const selectionMode = selectedNoteIds.size > 0;
-
-  // Section 7.1 Back navigation priority order.
+  // Back navigation priority order:
+  // 1) Drawer open -> close; 2) Expanded composer; 3) '+' menu; 4) Multi-selection;
+  // 5) Search; 6) Bottom sheet/dialog; 7) Favorites/Bin -> Home; 8) Default.
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (confirmDialog) {
-        setConfirmDialog(null);
-        return true;
-      }
       if (drawerOpen) {
         closeDrawerSmoothly();
         return true;
@@ -202,7 +268,17 @@ export function FeedScreen() {
         setSearchActive(false);
         return true;
       }
-      if (optionsNote || detailNote || editingNote || newFieldOpen || newListOpen || partialCopyNote || previewPhotoUri) {
+      if (
+        confirmDialog ||
+        optionsNote ||
+        detailNote ||
+        editingNote ||
+        newFieldOpen ||
+        newListOpen ||
+        partialCopyNote ||
+        previewPhotoUri
+      ) {
+        setConfirmDialog(null);
         setOptionsNote(null);
         setDetailNote(null);
         setEditingNote(null);
@@ -226,6 +302,7 @@ export function FeedScreen() {
     plusMenuOpen,
     selectedNoteIds.size,
     searchActive,
+    confirmDialog,
     optionsNote,
     detailNote,
     editingNote,
@@ -233,7 +310,6 @@ export function FeedScreen() {
     newListOpen,
     partialCopyNote,
     previewPhotoUri,
-    confirmDialog,
     activeView,
     closeDrawerSmoothly,
     clearSelection,
@@ -242,49 +318,50 @@ export function FeedScreen() {
     setActiveView,
   ]);
 
-  const drawerPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => drawerOpen,
-        onStartShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponder: (_evt, gesture) => {
-          if (!drawerOpen) return false;
-          return (
-            gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
-          );
-        },
-        onMoveShouldSetPanResponderCapture: (_evt, gesture) => {
-          if (!drawerOpen) return false;
-          return (
-            gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
-          );
-        },
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderMove: (_evt, gesture) => {
-          const clamped = Math.min(0, Math.max(-DRAWER_WIDTH, gesture.dx));
-          drawerTranslateX.setValue(clamped);
-        },
-        onPanResponderRelease: (_evt, gesture) => {
-          if (gesture.dx < -48 || gesture.vx < -0.35) {
-            closeDrawerSmoothly();
-          } else {
-            Animated.spring(drawerTranslateX, {
-              toValue: 0,
-              useNativeDriver: true,
-              bounciness: 0,
-            }).start();
-          }
-        },
-        onPanResponderTerminate: () => {
+  const drawerPanResponder = useMemo(() => {
+    const shouldClaimDrawerClose = (gesture: { dx: number; dy: number }) =>
+      drawerOpen &&
+      !drawerAnimatingRef.current &&
+      gesture.dx < -8 &&
+      Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2;
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_evt, gesture) => shouldClaimDrawerClose(gesture),
+      onMoveShouldSetPanResponderCapture: (_evt, gesture) =>
+        shouldClaimDrawerClose(gesture),
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_evt, gesture) => {
+        if (drawerAnimatingRef.current) return;
+        const clamped = Math.min(0, Math.max(-DRAWER_WIDTH, gesture.dx));
+        drawerTranslateX.setValue(clamped);
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        if (drawerAnimatingRef.current) return;
+        if (gesture.dx < -48 || gesture.vx < -0.35) {
+          closeDrawerSmoothly();
+        } else {
+          drawerAnimatingRef.current = true;
           Animated.spring(drawerTranslateX, {
             toValue: 0,
             useNativeDriver: true,
             bounciness: 0,
-          }).start();
-        },
-      }),
-    [drawerOpen, closeDrawerSmoothly, drawerTranslateX]
-  );
+          }).start(() => {
+            drawerAnimatingRef.current = false;
+          });
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (drawerAnimatingRef.current) return;
+        Animated.spring(drawerTranslateX, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 0,
+        }).start();
+      },
+    });
+  }, [drawerOpen, closeDrawerSmoothly, drawerTranslateX]);
 
   const drawerBackdropOpacity = drawerTranslateX.interpolate({
     inputRange: [-DRAWER_WIDTH, 0],
@@ -292,37 +369,130 @@ export function FeedScreen() {
     extrapolate: 'clamp',
   });
 
-  // Section 4.5 & 6.3 Horizontal swipe navigation across filters on Home.
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_evt, gesture) => {
-          if (activeView !== 'home' || selectionMode) return false;
-          const absX = Math.abs(gesture.dx);
-          const absY = Math.abs(gesture.dy);
-          return absX > 16 && absX > absY * 1.5;
-        },
-        onPanResponderRelease: (_evt, gesture) => {
-          if (activeView !== 'home' || selectionMode) return;
-          if (Math.abs(gesture.dx) < 64) return;
-          if (Math.abs(gesture.dx) <= Math.abs(gesture.dy) * 1.5) return;
+  const handleFilterChange = useCallback(
+    (nextFilter: NoteFilter) => {
+      activeFilterRef.current = nextFilter;
+      setPlusMenuOpen(false);
+      clearSelection();
+      setFilterType(nextFilter);
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-          const currentIdx = FILTER_ORDER.indexOf(filterType);
-          if (gesture.dx < 0) {
-            if (currentIdx < FILTER_ORDER.length - 1) {
-              setFilterType(FILTER_ORDER[currentIdx + 1]!);
-              listRef.current?.scrollToOffset({ offset: 0, animated: false });
-            }
-          } else if (filterType === 'all') {
-            setDrawerOpen(true);
-          } else if (currentIdx > 0) {
-            setFilterType(FILTER_ORDER[currentIdx - 1]!);
-            listRef.current?.scrollToOffset({ offset: 0, animated: false });
-          }
-        },
-      }),
-    [activeView, selectionMode, filterType, setFilterType]
+      const chipLayout = filterChipLayoutsRef.current[nextFilter];
+      if (chipLayout) {
+        filterScrollRef.current?.scrollTo({
+          x: Math.max(0, chipLayout.x - 16),
+          animated: true,
+        });
+      }
+    },
+    [clearSelection, setFilterType]
   );
+
+  const handleFeedSwipe = useCallback(
+    (dx: number, startX: number) => {
+      if (activeView === 'home') {
+        if (!listSwipeEnabled) return;
+        const currentFilter = activeFilterRef.current;
+        const currentIdx = FILTER_ORDER.indexOf(currentFilter);
+        if (dx < 0) {
+          if (currentIdx < FILTER_ORDER.length - 1) {
+            handleFilterChange(FILTER_ORDER[currentIdx + 1]!);
+          }
+        } else if (currentFilter === 'all') {
+          if (drawerGesturesEnabled && !drawerAnimatingRef.current) {
+            openDrawer();
+          }
+        } else if (currentIdx > 0) {
+          handleFilterChange(FILTER_ORDER[currentIdx - 1]!);
+        }
+        return;
+      }
+
+      if (
+        dx > 0 &&
+        startX <= DRAWER_EDGE_WIDTH &&
+        drawerGesturesEnabled &&
+        !drawerAnimatingRef.current
+      ) {
+        openDrawer();
+      }
+    },
+    [
+      activeView,
+      drawerGesturesEnabled,
+      handleFilterChange,
+      listSwipeEnabled,
+      openDrawer,
+    ]
+  );
+
+  // Single pointer-input handler on notes list (Home filter swipes + All/Favorites/Bin drawer swipe).
+  const panResponder = useMemo(() => {
+    const shouldClaimHorizontalSwipe = (gesture: {
+      dx: number;
+      dy: number;
+      x0: number;
+    }) => {
+      if (drawerOpen) return false;
+      const absX = Math.abs(gesture.dx);
+      const absY = Math.abs(gesture.dy);
+      if (absX <= SWIPE_TOUCH_SLOP || absX <= absY * 1.5) return false;
+      if (listSwipeEnabled) {
+        if (
+          activeFilterRef.current === 'all' &&
+          gesture.dx > 0 &&
+          !drawerGesturesEnabled
+        ) {
+          return false;
+        }
+        return true;
+      }
+      return (
+        drawerGesturesEnabled &&
+        !drawerAnimatingRef.current &&
+        gesture.dx > SWIPE_TOUCH_SLOP &&
+        gesture.x0 <= DRAWER_EDGE_WIDTH
+      );
+    };
+
+    const maybeTriggerSwipe = (gesture: {
+      dx: number;
+      dy: number;
+      x0: number;
+    }) => {
+      if (swipeTriggeredRef.current) return;
+      const absX = Math.abs(gesture.dx);
+      const absY = Math.abs(gesture.dy);
+      if (absX >= SWIPE_TRIGGER_DISTANCE && absX > absY * 1.5) {
+        swipeTriggeredRef.current = true;
+        handleFeedSwipe(gesture.dx, gesture.x0);
+      }
+    };
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_evt, gesture) =>
+        shouldClaimHorizontalSwipe(gesture),
+      onMoveShouldSetPanResponder: (_evt, gesture) =>
+        shouldClaimHorizontalSwipe(gesture),
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        swipeTriggeredRef.current = false;
+      },
+      onPanResponderMove: (_evt, gesture) => {
+        maybeTriggerSwipe(gesture);
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        maybeTriggerSwipe(gesture);
+        swipeTriggeredRef.current = false;
+      },
+      onPanResponderTerminate: () => {
+        swipeTriggeredRef.current = false;
+      },
+    });
+  }, [drawerOpen, drawerGesturesEnabled, handleFeedSwipe, listSwipeEnabled]);
 
   if (!user) return null;
 
@@ -687,7 +857,7 @@ export function FeedScreen() {
               style={styles.headerIconBtn}
               accessibilityLabel={activeView === 'home' ? 'Open navigation menu' : 'Back'}
               onPress={() =>
-                activeView === 'home' ? setDrawerOpen(true) : setActiveView('home')
+                activeView === 'home' ? openDrawer() : setActiveView('home')
               }
             >
               <MaterialIcons
@@ -790,46 +960,49 @@ export function FeedScreen() {
 
       {/* Home Filter Bar (Horizontal Scrolling Pills) */}
       {activeView === 'home' ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={[styles.filterBarScroll, { borderBottomColor: palette.outlineVariant }]}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTER_ORDER.map((filter) => {
-            const active = filterType === filter;
-            return (
-              <Pressable
-                key={filter}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: active
-                      ? palette.noteBubbleAccent
-                      : palette.surfaceElevated,
-                    borderColor: active
-                      ? palette.noteBubbleAccent
-                      : palette.outlineVariant,
-                  },
-                ]}
-                onPress={() => {
-                  setPlusMenuOpen(false);
-                  setFilterType(filter);
-                  listRef.current?.scrollToOffset({ offset: 0, animated: false });
-                }}
-              >
-                <Text
-                  style={{
-                    color: active ? palette.onAccent : palette.textPrimary,
-                    ...MessNoteTypography.labelLarge,
+        <Animated.View style={{ opacity: filterBarOpacity }}>
+          <ScrollView
+            ref={filterScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={[styles.filterBarScroll, { borderBottomColor: palette.outlineVariant }]}
+            contentContainerStyle={styles.filterRow}
+          >
+            {FILTER_ORDER.map((filter) => {
+              const active = filterType === filter;
+              return (
+                <Pressable
+                  key={filter}
+                  onLayout={(e) => {
+                    const { x, width } = e.nativeEvent.layout;
+                    filterChipLayoutsRef.current[filter] = { x, width };
                   }}
+                  style={[
+                    styles.filterPill,
+                    {
+                      backgroundColor: active
+                        ? palette.noteBubbleAccent
+                        : palette.surfaceElevated,
+                      borderColor: active
+                        ? palette.noteBubbleAccent
+                        : palette.outlineVariant,
+                    },
+                  ]}
+                  onPress={() => handleFilterChange(filter)}
                 >
-                  {FILTER_LABELS[filter]}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+                  <Text
+                    style={{
+                      color: active ? palette.onAccent : palette.textPrimary,
+                      ...MessNoteTypography.labelLarge,
+                    }}
+                  >
+                    {FILTER_LABELS[filter]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Animated.View>
       ) : null}
 
       {error ? (
@@ -1871,6 +2044,7 @@ const styles = StyleSheet.create({
   },
   drawerUrlText: {
     flex: 1,
+    fontFamily: MessNoteFontFamily.regular,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1900,6 +2074,7 @@ const styles = StyleSheet.create({
   },
   drawerUserEmail: {
     flex: 1,
+    fontFamily: MessNoteFontFamily.regular,
     fontSize: 12,
     fontWeight: '500',
   },
