@@ -702,7 +702,7 @@ export function FeedScreen() {
         <View
           style={[
             styles.header,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <View style={styles.headerLeft}>
@@ -786,7 +786,7 @@ export function FeedScreen() {
           style={[
             styles.header,
             styles.searchHeaderContainer,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <View
@@ -849,7 +849,7 @@ export function FeedScreen() {
         <View
           style={[
             styles.header,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <View style={styles.headerLeft}>
@@ -965,7 +965,7 @@ export function FeedScreen() {
             ref={filterScrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={[styles.filterBarScroll, { borderBottomColor: palette.outlineVariant }]}
+            style={styles.filterBarScroll}
             contentContainerStyle={styles.filterRow}
           >
             {FILTER_ORDER.map((filter) => {
@@ -1082,8 +1082,7 @@ export function FeedScreen() {
             styles.composerDock,
             {
               zIndex: 22,
-              backgroundColor: palette.surfaceContainer,
-              borderTopColor: palette.outlineVariant,
+              backgroundColor: 'transparent',
             },
           ]}
         >
@@ -1736,7 +1735,6 @@ const styles = StyleSheet.create({
     minHeight: MessNoteMetrics.headerRowHeight,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1825,7 +1823,6 @@ const styles = StyleSheet.create({
   },
   filterBarScroll: {
     flexGrow: 0,
-    borderBottomWidth: 1,
   },
   filterRow: {
     flexDirection: 'row',
@@ -1919,7 +1916,6 @@ const styles = StyleSheet.create({
   composerDock: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderTopWidth: 1,
     gap: 8,
   },
   draftPhotosRow: {

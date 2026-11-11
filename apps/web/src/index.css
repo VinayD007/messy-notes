@@ -240,8 +240,7 @@ textarea {
 .top-header {
   height: 64px;
   padding: 0 24px;
-  background: var(--surface-container);
-  border-bottom: 1px solid var(--outline-variant);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -358,8 +357,7 @@ textarea {
   display: flex;
   gap: 8px;
   padding: 12px 16px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--outline-variant);
+  background: transparent;
   overflow-x: auto;
   flex-shrink: 0;
 }
@@ -1090,7 +1088,6 @@ textarea {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .sheet-title {
@@ -1167,7 +1164,6 @@ textarea {
 
 .dialog-header {
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1214,7 +1210,6 @@ textarea {
 .mono-preview-bar,
 .dialog-photo-footer {
   padding: 10px 16px;
-  border-top: 1px solid var(--border-subtle);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

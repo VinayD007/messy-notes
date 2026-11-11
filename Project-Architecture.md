@@ -35,7 +35,7 @@ All visual tokens for `apps/mobile` are centralized in `DarkMessNoteColors`, `Li
 | Primary Text | `textPrimary`, `onSecondaryContainer` | `#FFFFFF` | Note body copy, titles, primary dialog headlines, secondary button text, drawer nav labels |
 | Secondary Text | `textSecondary` | `#B0B0B5` | Subtitles, dialog body descriptions, category pill labels, nav icons |
 | Muted Text | `textMuted` | `#8E8E93` | Input placeholders, timestamps, drag handles, inactive favorite outline star, drawer email |
-| Dividers & Hairlines | `borderSubtle`, `outlineVariant` | `#38383A` | Header bottom dividers, surface card borders, chip hairlines, composer pill outlines |
+| Outlines & Hairlines | `borderSubtle`, `outlineVariant` | `#38383A` | Surface card borders, chip hairlines, composer pill outlines (divider-free floating headers, filter rows, and composer dock) |
 | Tonal / Selected Fill | `primaryContainer`, `selectedItemBackground` | `rgba(255, 214, 10, 0.16)` / `rgba(255, 214, 10, 0.14)` | Active drawer destination pill, active favorite button background, selected note fill |
 | Destructive Actions | `destructiveAction` | `#FF453A` | Delete, Delete permanently, Empty bin (`Delete all`), Discard changes, Sign out (never uses `#FFD60A`) |
 | Note Bubble Fill | `noteBubbleBackground` | `transparent` | Transparent note cards outlined with `#FFD60A` directly on the `#000000` OLED canvas |

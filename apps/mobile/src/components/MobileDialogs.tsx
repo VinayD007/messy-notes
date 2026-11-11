@@ -286,7 +286,7 @@ export function MobileOptionsSheet({
           <View
             style={[styles.sheetHandle, { backgroundColor: palette.textMuted }]}
           />
-          <View style={[styles.sheetHeader, { borderBottomColor: palette.outlineVariant }]}>
+          <View style={styles.sheetHeader}>
             <Text style={[styles.sheetTitle, { color: palette.textPrimary }]}>
               {liveNote.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
             </Text>
@@ -495,7 +495,7 @@ export function MobileNoteDetailModal({
         <View
           style={[
             styles.dialogHeader,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <Pressable
@@ -676,7 +676,7 @@ export function MobileRegularEditorModal({
         <View
           style={[
             styles.dialogHeader,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <Pressable
@@ -748,7 +748,6 @@ export function MobileRegularEditorModal({
               styles.monoPreviewRow,
               {
                 backgroundColor: palette.surfaceCard,
-                borderTopColor: palette.outlineVariant,
               },
             ]}
           >
@@ -840,7 +839,7 @@ export function MobileFieldValueModal({
         <View
           style={[
             styles.dialogHeader,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <Pressable
@@ -1066,7 +1065,7 @@ export function MobileListModal({
         <View
           style={[
             styles.dialogHeader,
-            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.bg },
           ]}
         >
           <Pressable
@@ -1246,7 +1245,7 @@ export function MobilePartialCopyModal({
           ]}
           onPress={() => undefined}
         >
-          <View style={[styles.sheetHeader, { borderBottomColor: palette.outlineVariant }]}>
+          <View style={styles.sheetHeader}>
             <Text style={[styles.sheetTitle, { color: palette.textPrimary }]}>
               Copy partially
             </Text>
@@ -1466,7 +1465,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingBottom: 12,
-    borderBottomWidth: 1,
     marginBottom: 6,
     gap: 12,
   },
@@ -1496,7 +1494,6 @@ const styles = StyleSheet.create({
     minHeight: MessNoteMetrics.headerRowHeight,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1578,7 +1575,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderTopWidth: 1,
   },
   monoPreviewChips: {
     flexDirection: 'row',
