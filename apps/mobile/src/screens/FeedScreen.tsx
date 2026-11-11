@@ -37,6 +37,7 @@ import {
   getDisplayedBinNotes,
   getDisplayedFavorites,
   getDisplayedNotes,
+  hasCopyableText,
   type FieldNote,
   type ListNote,
   type Note,
@@ -744,7 +745,10 @@ export function FeedScreen() {
             <Pressable style={styles.headerIconBtn} onPress={clearSelection}>
               <MaterialIcons name="close" size={22} color={palette.textPrimary} />
             </Pressable>
-            <Text style={[styles.headerTitle, { color: palette.textPrimary }]} numberOfLines={1}>
+            <Text
+              style={[styles.headerTitle, { color: palette.textPrimary, flexShrink: 1 }]}
+              numberOfLines={1}
+            >
               {selectedNotes.length} selected
             </Text>
           </View>
@@ -753,56 +757,91 @@ export function FeedScreen() {
               <>
                 <Pressable
                   style={[
-                    styles.headerTextPillBtn,
+                    styles.selectionActionBtn,
                     { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
                   ]}
+                  accessibilityLabel="Edit note"
                   onPress={() => {
                     const target = selectedNotes[0]!;
                     clearSelection();
                     setEditingNote(target);
                   }}
                 >
-                  <Text style={[styles.headerActionLabel, { color: palette.textPrimary }]}>
-                    Edit
-                  </Text>
+                  <MaterialIcons name="edit" size={20} color={palette.textPrimary} />
                 </Pressable>
                 <Pressable
+                  accessibilityLabel="Copy partially"
+                  accessibilityState={{ disabled: !hasCopyableText(selectedNotes[0]!) }}
                   style={[
-                    styles.headerTextPillBtn,
-                    { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+                    styles.selectionActionBtn,
+                    {
+                      backgroundColor: palette.surfaceElevated,
+                      borderColor: palette.outlineVariant,
+                      opacity: hasCopyableText(selectedNotes[0]!) ? 1 : 0.45,
+                    },
                   ]}
                   onPress={() => {
                     const target = selectedNotes[0]!;
+                    if (!hasCopyableText(target)) {
+                      clearSelection();
+                      showSnackbar({ message: 'No Text Found' });
+                      return;
+                    }
                     clearSelection();
                     setPartialCopyNote(target);
                   }}
                 >
-                  <Text style={[styles.headerActionLabel, { color: palette.textPrimary }]}>
-                    Partial
-                  </Text>
+                  <MaterialIcons
+                    name="checklist"
+                    size={20}
+                    color={
+                      hasCopyableText(selectedNotes[0]!)
+                        ? palette.textPrimary
+                        : palette.textMuted
+                    }
+                  />
                 </Pressable>
               </>
             ) : null}
             <Pressable
+              accessibilityLabel="Copy selected notes"
+              accessibilityState={{ disabled: !selectedNotes.some(hasCopyableText) }}
               style={[
-                styles.headerTextPillBtn,
-                { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+                styles.selectionActionBtn,
+                {
+                  backgroundColor: palette.surfaceElevated,
+                  borderColor: palette.outlineVariant,
+                  opacity: selectedNotes.some(hasCopyableText) ? 1 : 0.45,
+                },
               ]}
               onPress={() => {
-                void Clipboard.setStringAsync(
-                  selectedNotes.map(buildGroupedText).join('\n\n')
-                );
+                const copyParts = selectedNotes
+                  .filter(hasCopyableText)
+                  .map(buildGroupedText);
+                if (copyParts.length === 0) {
+                  clearSelection();
+                  showSnackbar({ message: 'No Text Found' });
+                  return;
+                }
+                void Clipboard.setStringAsync(copyParts.join('\n\n'));
                 clearSelection();
                 showSnackbar({ message: 'Copied to clipboard!' });
               }}
             >
-              <Text style={[styles.headerActionLabel, { color: palette.textPrimary }]}>
-                Copy
-              </Text>
+              <MaterialIcons
+                name="content-copy"
+                size={20}
+                color={
+                  selectedNotes.some(hasCopyableText)
+                    ? palette.textPrimary
+                    : palette.textMuted
+                }
+              />
             </Pressable>
             <Pressable
+              accessibilityLabel="Delete selected notes"
               style={[
-                styles.headerTextPillBtn,
+                styles.selectionActionBtn,
                 {
                   backgroundColor: 'rgba(255, 69, 58, 0.14)',
                   borderColor: 'rgba(255, 69, 58, 0.35)',
@@ -810,9 +849,11 @@ export function FeedScreen() {
               ]}
               onPress={() => confirmSoftDelete(selectedNotes.map((n) => n.id))}
             >
-              <Text style={[styles.headerActionLabel, { color: palette.destructiveAction }]}>
-                Delete
-              </Text>
+              <MaterialIcons
+                name="delete-outline"
+                size={20}
+                color={palette.destructiveAction}
+              />
             </Pressable>
           </View>
         </View>
@@ -911,7 +952,7 @@ export function FeedScreen() {
 
             <View style={styles.headerTitleGroup}>
               <Text
-                style={[styles.headerTitle, { color: palette.textPrimary, flexShrink: 1 }]}
+                style={[styles.headerTitleStacked, { color: palette.textPrimary }]}
                 numberOfLines={1}
               >
                 {activeView === 'favorites'
@@ -920,20 +961,11 @@ export function FeedScreen() {
                     ? 'Bin'
                     : 'MessyNotes'}
               </Text>
-              <View
-                style={[
-                  styles.headerStatusPill,
-                  {
-                    backgroundColor:
-                      syncState === 'syncing' ? palette.primaryContainer : palette.surfaceCard,
-                    borderColor: palette.outlineVariant,
-                  },
-                ]}
-              >
+              <View style={styles.headerStatusSubRow}>
                 {syncState === 'syncing' ? (
                   <Animated.View
                     style={[
-                      styles.m3eSyncShape,
+                      styles.m3eSyncDot,
                       {
                         backgroundColor: palette.noteBubbleAccent,
                         transform: [
@@ -953,15 +985,31 @@ export function FeedScreen() {
                       },
                     ]}
                   />
-                ) : null}
+                ) : (
+                  <View
+                    style={[
+                      styles.headerStatusDot,
+                      {
+                        backgroundColor: !isOnline
+                          ? palette.destructiveAction
+                          : realtimeConnected
+                            ? '#30D158'
+                            : palette.noteBubbleAccent,
+                      },
+                    ]}
+                  />
+                )}
                 <Text
-                  style={{
-                    color:
-                      syncState === 'syncing'
-                        ? palette.onPrimaryContainer
-                        : palette.noteBubbleAccent,
-                    ...MessNoteTypography.labelMedium,
-                  }}
+                  style={[
+                    styles.headerStatusSubText,
+                    {
+                      color: !isOnline
+                        ? palette.textMuted
+                        : syncState === 'syncing'
+                          ? palette.noteBubbleAccent
+                          : palette.textSecondary,
+                    },
+                  ]}
                   numberOfLines={1}
                 >
                   {statusLabel}
@@ -1367,7 +1415,7 @@ export function FeedScreen() {
               value={draftText}
               onChangeText={setDraftText}
               onFocus={() => setPlusMenuOpen(false)}
-              placeholder="Write a note..."
+              placeholder="write a note..."
               placeholderTextColor={palette.textMuted}
             />
 
@@ -1904,14 +1952,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    gap: 10,
+    gap: 12,
   },
   headerTitleGroup: {
     flex: 1,
     minWidth: 0,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginTop: -2,
+    gap: 1,
+  },
+  headerTitleStacked: {
+    ...MessNoteTypography.titleLarge,
+    lineHeight: 23,
+  },
+  headerStatusSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
+  },
+  headerStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  m3eSyncDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 2,
+  },
+  headerStatusSubText: {
+    ...MessNoteTypography.labelMedium,
+    fontSize: 11.5,
+    lineHeight: 14,
+    fontWeight: '600',
   },
   headerSideRight: {
     flexShrink: 0,
@@ -1919,16 +1994,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: MessNoteMetrics.intraSpacing,
-  },
-  headerStatusPill: {
-    flexShrink: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 2,
   },
   m3eSyncShape: {
     width: 10,
@@ -1990,14 +2055,23 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flex: 1,
+    minWidth: 0,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: MessNoteMetrics.intraSpacing,
+    flexShrink: 0,
+    gap: 6,
+  },
+  selectionActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerIconBtn: {
     width: 44,
@@ -2114,9 +2188,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   composerDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 22,
+    elevation: 12,
     paddingHorizontal: MessNoteMetrics.outerGutter,
     paddingBottom: 12,
-    paddingTop: 4,
+    paddingTop: 8,
     gap: 10,
   },
   composerTopActionRow: {
@@ -2149,17 +2229,21 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: MessNoteMetrics.intraSpacing,
+    gap: 6,
     elevation: 6,
   },
   composerInput: {
     flex: 1,
     ...MessNoteTypography.bodyLarge,
+    minHeight: 44,
     maxHeight: 120,
-    paddingVertical: 9,
+    paddingTop: 10,
+    paddingBottom: 10,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   pillSmallBtn: {
-    width: 40,
+    width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',

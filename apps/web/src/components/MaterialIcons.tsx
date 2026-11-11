@@ -170,3 +170,35 @@ export function CheckIcon(props: IconProps) {
     </SvgBase>
   );
 }
+
+export function VisibilityIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5ZM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5Zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3Z" />
+    </SvgBase>
+  );
+}
+
+export function EditIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
+    </SvgBase>
+  );
+}
+
+export function ChecklistIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M22 7h-9v2h9V7Zm0 8h-9v2h9v-2ZM5.54 11 2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11Zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19Z" />
+    </SvgBase>
+  );
+}
+
+export function DeleteOutlineIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12ZM8 9h8v10H8V9Zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5Z" />
+    </SvgBase>
+  );
+}

@@ -26,6 +26,7 @@ import {
   ExpandedRegularDialog,
   FieldValueDialog,
   ListDialog,
+  NoteDetailDialog,
   PartialCopyDialog,
   SingleNoteOptionsModal,
 } from './components/NoteDialogs';
@@ -79,6 +80,7 @@ export function App() {
   const [draftPhotos, setDraftPhotos] = useState<File[]>([]);
 
   const [optionsNote, setOptionsNote] = useState<Note | null>(null);
+  const [detailNote, setDetailNote] = useState<Note | null>(null);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [newFieldDialogOpen, setNewFieldDialogOpen] = useState(false);
   const [newListDialogOpen, setNewListDialogOpen] = useState(false);
@@ -125,6 +127,7 @@ export function App() {
         setSearchActive(false);
       } else if (
         optionsNote ||
+        detailNote ||
         editingNote ||
         newFieldDialogOpen ||
         newListDialogOpen ||
@@ -136,6 +139,7 @@ export function App() {
         previewPhotoUrl
       ) {
         setOptionsNote(null);
+        setDetailNote(null);
         setEditingNote(null);
         setNewFieldDialogOpen(false);
         setNewListDialogOpen(false);
@@ -394,10 +398,21 @@ export function App() {
           activeView={activeView}
           filterType={filterType}
           onClose={() => setOptionsNote(null)}
+          onViewDetail={(n) => setDetailNote(n)}
           onEdit={(n) => setEditingNote(n)}
           onPartialCopy={(n) => setPartialCopyNote(n)}
           onRequestDelete={(ids) => setPendingBinIds(ids)}
           onRequestPermDelete={(id) => setPendingPermDeleteId(id)}
+          onRequestOpenLink={(href) => setLinkToOpen(href)}
+        />
+      )}
+
+      {detailNote && (
+        <NoteDetailDialog
+          note={detailNote}
+          isBin={activeView === 'bin' || detailNote.deleted_at !== null}
+          onClose={() => setDetailNote(null)}
+          onEdit={(n) => setEditingNote(n)}
           onRequestOpenLink={(href) => setLinkToOpen(href)}
         />
       )}

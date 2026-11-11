@@ -90,34 +90,31 @@ export function NoteBubble({
       tabIndex={0}
       role="button"
     >
-      <div className="bubble-top-row">
-        <div className="bubble-badges">
-          {note.type !== 'regular' && (
-            <span className="bubble-kind-pill">
-              {note.type === 'field' ? 'Fields-Values' : 'List'}
-            </span>
-          )}
-          {note.favorite && (
-            <span className="star-badge" title="Favorite">
-              <StarIcon size={16} />
-            </span>
-          )}
-          {isDirty && <span className="queued-tag">Queued</span>}
-        </div>
+      {(note.favorite || isDirty || (showPinBadge && note.pinned) || selectionMode) && (
+        <div className="bubble-top-row">
+          <div className="bubble-badges">
+            {note.favorite && (
+              <span className="star-badge" title="Favorite">
+                <StarIcon size={16} />
+              </span>
+            )}
+            {isDirty && <span className="queued-tag">Queued</span>}
+          </div>
 
-        <div className="bubble-top-right">
-          {showPinBadge && note.pinned && (
-            <span className="pin-badge" title="Pinned">
-              <PushPinIcon size={15} />
-            </span>
-          )}
-          {selectionMode && (
-            <span className={`select-circle ${isSelected ? 'checked' : ''}`}>
-              {isSelected ? <CheckIcon size={14} /> : null}
-            </span>
-          )}
+          <div className="bubble-top-right">
+            {showPinBadge && note.pinned && (
+              <span className="pin-badge" title="Pinned">
+                <PushPinIcon size={15} />
+              </span>
+            )}
+            {selectionMode && (
+              <span className={`select-circle ${isSelected ? 'checked' : ''}`}>
+                {isSelected ? <CheckIcon size={14} /> : null}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {note.title ? <h3 className="bubble-title">{note.title}</h3> : null}
 

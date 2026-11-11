@@ -160,7 +160,7 @@ export function BottomComposer({
             }
             onFocus={onFocusInput}
             onKeyDown={handleKeyDown}
-            placeholder="Write a note..."
+            placeholder="write a note..."
           />
 
           <div className="composer-pill-actions">

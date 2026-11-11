@@ -21,6 +21,7 @@ import {
   adjustSpansForTrim,
   buildGroupedText,
   canPinNote,
+  hasCopyableText,
   isNoteEdited,
   joinPartialCopyTokens,
   toggleMonoSpan,
@@ -255,10 +256,27 @@ export function MobileOptionsSheet({
     });
   };
 
+  const canCopyText = hasCopyableText(liveNote);
+
   const handleCopy = async () => {
+    if (!canCopyText) {
+      onClose();
+      showSnackbar({ message: 'No Text Found' });
+      return;
+    }
     await Clipboard.setStringAsync(buildGroupedText(liveNote));
     showSnackbar({ message: 'Copied to clipboard!' });
     onClose();
+  };
+
+  const handlePartialCopyPress = () => {
+    if (!canCopyText) {
+      onClose();
+      showSnackbar({ message: 'No Text Found' });
+      return;
+    }
+    onClose();
+    onPartialCopy(liveNote);
   };
 
   const handleShare = async () => {
@@ -290,42 +308,63 @@ export function MobileOptionsSheet({
             <Text style={[styles.sheetTitle, { color: palette.textPrimary }]}>
               {liveNote.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
             </Text>
-            {!isBin ? (
-              <View style={styles.sheetHeaderActions}>
+            <View style={styles.sheetHeaderActions}>
+              {onViewDetail ? (
                 <Pressable
                   style={[
                     styles.starToggleBtn,
                     { backgroundColor: palette.surfaceElevated },
-                    isPinned && { backgroundColor: palette.primaryContainer },
                   ]}
-                  onPress={handleTogglePin}
-                  accessibilityLabel={isPinned ? 'Unpin note' : 'Pin note'}
-                >
-                  <MaterialCommunityIcons
-                    name={isPinned ? 'pin' : 'pin-outline'}
-                    size={22}
-                    color={isPinned ? palette.noteBubbleAccent : palette.textMuted}
-                  />
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.starToggleBtn,
-                    { backgroundColor: palette.surfaceElevated },
-                    isFavorite && { backgroundColor: palette.primaryContainer },
-                  ]}
-                  onPress={handleToggleFavorite}
-                  accessibilityLabel={
-                    isFavorite ? 'Remove from favorites' : 'Add to favorites'
-                  }
+                  onPress={() => {
+                    onClose();
+                    onViewDetail(liveNote);
+                  }}
+                  accessibilityLabel="View note detail"
                 >
                   <MaterialIcons
-                    name={isFavorite ? 'star' : 'star-border'}
-                    size={24}
-                    color={isFavorite ? palette.noteBubbleAccent : palette.textMuted}
+                    name="visibility"
+                    size={22}
+                    color={palette.noteBubbleAccent}
                   />
                 </Pressable>
-              </View>
-            ) : null}
+              ) : null}
+              {!isBin ? (
+                <>
+                  <Pressable
+                    style={[
+                      styles.starToggleBtn,
+                      { backgroundColor: palette.surfaceElevated },
+                      isPinned && { backgroundColor: palette.primaryContainer },
+                    ]}
+                    onPress={handleTogglePin}
+                    accessibilityLabel={isPinned ? 'Unpin note' : 'Pin note'}
+                  >
+                    <MaterialCommunityIcons
+                      name={isPinned ? 'pin' : 'pin-outline'}
+                      size={22}
+                      color={isPinned ? palette.noteBubbleAccent : palette.textMuted}
+                    />
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.starToggleBtn,
+                      { backgroundColor: palette.surfaceElevated },
+                      isFavorite && { backgroundColor: palette.primaryContainer },
+                    ]}
+                    onPress={handleToggleFavorite}
+                    accessibilityLabel={
+                      isFavorite ? 'Remove from favorites' : 'Add to favorites'
+                    }
+                  >
+                    <MaterialIcons
+                      name={isFavorite ? 'star' : 'star-border'}
+                      size={24}
+                      color={isFavorite ? palette.noteBubbleAccent : palette.textMuted}
+                    />
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
           </View>
 
           <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
@@ -351,19 +390,6 @@ export function MobileOptionsSheet({
                   }}
                 />
               </ScrollView>
-            ) : null}
-
-            {onViewDetail ? (
-              <SheetAction
-                label="View note detail"
-                icon="visibility"
-                color={palette.noteBubbleAccent}
-                palette={palette}
-                onPress={() => {
-                  onClose();
-                  onViewDetail(liveNote);
-                }}
-              />
             ) : null}
 
             {isBin ? (
@@ -401,19 +427,18 @@ export function MobileOptionsSheet({
                 <SheetAction
                   label="Copy"
                   icon="content-copy"
-                  color={palette.textPrimary}
+                  color={canCopyText ? palette.textPrimary : palette.textMuted}
+                  disabledStyle={!canCopyText}
                   palette={palette}
                   onPress={() => void handleCopy()}
                 />
                 <SheetAction
                   label="Copy partially"
                   icon="checklist"
-                  color={palette.textPrimary}
+                  color={canCopyText ? palette.textPrimary : palette.textMuted}
+                  disabledStyle={!canCopyText}
                   palette={palette}
-                  onPress={() => {
-                    onClose();
-                    onPartialCopy(liveNote);
-                  }}
+                  onPress={handlePartialCopyPress}
                 />
                 <SheetAction
                   label="Edit"
@@ -448,19 +473,23 @@ function SheetAction({
   label,
   icon,
   color,
+  disabledStyle = false,
   palette,
   onPress,
 }: {
   label: string;
   icon: keyof typeof MaterialIcons.glyphMap;
   color: string;
+  disabledStyle?: boolean;
   palette: MessyNotePalette;
   onPress: () => void;
 }) {
   return (
     <Pressable
+      accessibilityState={{ disabled: disabledStyle }}
       style={({ pressed }) => [
         styles.sheetAction,
+        disabledStyle && { opacity: 0.45 },
         pressed && { backgroundColor: palette.surfaceElevated },
       ]}
       onPress={onPress}
@@ -811,12 +840,27 @@ export function MobileFieldValueModal({
   const [title, setTitle] = useState(existingNote?.title ?? '');
   const [rows, setRows] = useState<FieldValueEntry[]>(initialRows);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const fieldInputRefs = useRef<Record<string, TextInput | null>>({});
   const valueInputRefs = useRef<Record<string, TextInput | null>>({});
 
   if (!visible) return null;
 
   const lastRow = rows[rows.length - 1];
   const lastRowBlank = !lastRow || (!lastRow.field.trim() && !lastRow.value.trim());
+
+  const appendFieldRow = () => {
+    const nextId = Crypto.randomUUID();
+    setRows((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        field: '',
+        value: '',
+        insertionOrder: prev.length,
+      },
+    ]);
+    setTimeout(() => fieldInputRefs.current[nextId]?.focus(), 50);
+  };
 
   const handleClose = () => {
     if (confirmDiscard) {
@@ -920,15 +964,21 @@ export function MobileFieldValueModal({
             >
               <Text style={[styles.rowIdxText, { color: palette.textMuted }]}>{idx + 1}.</Text>
               <TextInput
+                ref={(el) => {
+                  fieldInputRefs.current[row.id] = el;
+                }}
                 style={[styles.flexInput, { color: palette.textPrimary }]}
                 placeholder="Field"
                 placeholderTextColor={palette.textMuted}
+                returnKeyType="next"
+                submitBehavior="submit"
                 value={row.field}
                 onChangeText={(field) =>
                   setRows((prev) =>
                     prev.map((r) => (r.id === row.id ? { ...r, field } : r))
                   )
                 }
+                onSubmitEditing={() => valueInputRefs.current[row.id]?.focus()}
               />
               <Pressable
                 style={[
@@ -950,12 +1000,24 @@ export function MobileFieldValueModal({
                 style={[styles.flexInput, { color: palette.textPrimary }]}
                 placeholder="Value"
                 placeholderTextColor={palette.textMuted}
+                returnKeyType="done"
+                submitBehavior="submit"
                 value={row.value}
                 onChangeText={(value) =>
                   setRows((prev) =>
                     prev.map((r) => (r.id === row.id ? { ...r, value } : r))
                   )
                 }
+                onSubmitEditing={() => {
+                  if (idx < rows.length - 1) {
+                    const nextRow = rows[idx + 1];
+                    if (nextRow) {
+                      fieldInputRefs.current[nextRow.id]?.focus();
+                      return;
+                    }
+                  }
+                  appendFieldRow();
+                }}
               />
               <Pressable
                 disabled={rows.length <= 1}
@@ -980,17 +1042,7 @@ export function MobileFieldValueModal({
                 opacity: lastRowBlank ? 0.4 : 1,
               },
             ]}
-            onPress={() =>
-              setRows((prev) => [
-                ...prev,
-                {
-                  id: Crypto.randomUUID(),
-                  field: '',
-                  value: '',
-                  insertionOrder: prev.length,
-                },
-              ])
-            }
+            onPress={appendFieldRow}
           >
             <Text style={[styles.addRowBtnText, { color: palette.noteBubbleAccent }]}>
               + Add Row
@@ -1041,8 +1093,23 @@ export function MobileListModal({
   const [title, setTitle] = useState(existingNote?.title ?? '');
   const [rows, setRows] = useState<ListRowEntry[]>(initialItems);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const itemInputRefs = useRef<Record<string, TextInput | null>>({});
 
   if (!visible) return null;
+
+  const appendListRow = () => {
+    const nextId = Crypto.randomUUID();
+    setRows((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        value: '',
+        checked: false,
+        insertionOrder: prev.length,
+      },
+    ]);
+    setTimeout(() => itemInputRefs.current[nextId]?.focus(), 50);
+  };
 
   const handleClose = () => {
     if (confirmDiscard) {
@@ -1144,15 +1211,30 @@ export function MobileListModal({
             >
               <Text style={[styles.rowIdxText, { color: palette.textMuted }]}>{idx + 1}.</Text>
               <TextInput
+                ref={(el) => {
+                  itemInputRefs.current[row.id] = el;
+                }}
                 style={[styles.flexInput, { color: palette.textPrimary }]}
                 placeholder="List item"
                 placeholderTextColor={palette.textMuted}
+                returnKeyType="done"
+                submitBehavior="submit"
                 value={row.value}
                 onChangeText={(value) =>
                   setRows((prev) =>
                     prev.map((r) => (r.id === row.id ? { ...r, value } : r))
                   )
                 }
+                onSubmitEditing={() => {
+                  if (idx < rows.length - 1) {
+                    const nextRow = rows[idx + 1];
+                    if (nextRow) {
+                      itemInputRefs.current[nextRow.id]?.focus();
+                      return;
+                    }
+                  }
+                  appendListRow();
+                }}
               />
               <Pressable
                 disabled={rows.length <= 1}
@@ -1172,17 +1254,7 @@ export function MobileListModal({
               styles.addRowBtn,
               { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
             ]}
-            onPress={() =>
-              setRows((prev) => [
-                ...prev,
-                {
-                  id: Crypto.randomUUID(),
-                  value: '',
-                  checked: false,
-                  insertionOrder: prev.length,
-                },
-              ])
-            }
+            onPress={appendListRow}
           >
             <Text style={[styles.addRowBtnText, { color: palette.noteBubbleAccent }]}>
               + Add Row

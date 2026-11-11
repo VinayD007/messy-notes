@@ -293,6 +293,14 @@ export function buildGroupedText(note: Note): string {
 }
 
 /**
+ * Returns true when a note contains any non-whitespace text across its title,
+ * body, fields, or list items that can be copied or partially copied.
+ */
+export function hasCopyableText(note: Note): boolean {
+  return buildGroupedText(note).trim().length > 0;
+}
+
+/**
  * Primary feed ordering rule (Section 5.9): newest first by created_at.
  * Editing a note updates updated_at only and never alters feed position.
  */

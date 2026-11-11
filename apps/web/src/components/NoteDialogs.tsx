@@ -5,6 +5,8 @@ import {
   adjustSpansForTrim,
   buildGroupedText,
   canPinNote,
+  hasCopyableText,
+  isNoteEdited,
   joinPartialCopyTokens,
   toggleMonoSpan,
   tokenizeForPartialCopy,
@@ -24,6 +26,7 @@ import {
   PushPinOutlinedIcon,
   StarBorderIcon,
   StarIcon,
+  VisibilityIcon,
 } from './MaterialIcons';
 import { PlainTextView } from './PlainTextView';
 
@@ -32,6 +35,7 @@ export function SingleNoteOptionsModal({
   activeView,
   filterType: _filterType,
   onClose,
+  onViewDetail,
   onEdit,
   onPartialCopy,
   onRequestDelete,
@@ -42,6 +46,7 @@ export function SingleNoteOptionsModal({
   activeView: NoteView;
   filterType: NoteFilter;
   onClose: () => void;
+  onViewDetail?: (note: Note) => void;
   onEdit: (note: Note) => void;
   onPartialCopy: (note: Note) => void;
   onRequestDelete: (noteIds: string[]) => void;
@@ -97,10 +102,27 @@ export function SingleNoteOptionsModal({
     });
   };
 
+  const canCopyText = hasCopyableText(liveNote);
+
   const handleCopy = async () => {
+    if (!canCopyText) {
+      onClose();
+      showSnackbar({ message: 'No Text Found' });
+      return;
+    }
     await navigator.clipboard.writeText(buildGroupedText(liveNote));
     showSnackbar({ message: 'Copied to clipboard!' });
     onClose();
+  };
+
+  const handlePartialCopy = () => {
+    if (!canCopyText) {
+      onClose();
+      showSnackbar({ message: 'No Text Found' });
+      return;
+    }
+    onClose();
+    onPartialCopy(liveNote);
   };
 
   const handleShare = async () => {
@@ -129,38 +151,54 @@ export function SingleNoteOptionsModal({
           <span className="sheet-title">
             {liveNote.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
           </span>
-          {!isBin && (
-            <div className="sheet-header-actions">
+          <div className="sheet-header-actions">
+            {onViewDetail && (
               <button
                 type="button"
-                className={`pin-toggle-btn ${isPinned ? 'active' : ''}`}
-                aria-label={isPinned ? 'Unpin note' : 'Pin note'}
-                title={isPinned ? 'Unpin note' : 'Pin note'}
-                aria-pressed={isPinned}
-                onClick={handleTogglePin}
+                className="detail-toggle-btn"
+                aria-label="View note detail"
+                title="View note detail"
+                onClick={() => {
+                  onClose();
+                  onViewDetail(liveNote);
+                }}
               >
-                {isPinned ? (
-                  <PushPinIcon size={21} />
-                ) : (
-                  <PushPinOutlinedIcon size={21} />
-                )}
+                <VisibilityIcon size={20} />
               </button>
-              <button
-                type="button"
-                className={`star-toggle-btn ${isFavorite ? 'active' : ''}`}
-                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                title="Toggle favorite"
-                aria-pressed={isFavorite}
-                onClick={handleToggleFavorite}
-              >
-                {isFavorite ? (
-                  <StarIcon size={22} />
-                ) : (
-                  <StarBorderIcon size={22} />
-                )}
-              </button>
-            </div>
-          )}
+            )}
+            {!isBin && (
+              <>
+                <button
+                  type="button"
+                  className={`pin-toggle-btn ${isPinned ? 'active' : ''}`}
+                  aria-label={isPinned ? 'Unpin note' : 'Pin note'}
+                  title={isPinned ? 'Unpin note' : 'Pin note'}
+                  aria-pressed={isPinned}
+                  onClick={handleTogglePin}
+                >
+                  {isPinned ? (
+                    <PushPinIcon size={21} />
+                  ) : (
+                    <PushPinOutlinedIcon size={21} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`star-toggle-btn ${isFavorite ? 'active' : ''}`}
+                  aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  title="Toggle favorite"
+                  aria-pressed={isFavorite}
+                  onClick={handleToggleFavorite}
+                >
+                  {isFavorite ? (
+                    <StarIcon size={22} />
+                  ) : (
+                    <StarBorderIcon size={22} />
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {liveNote.type === 'regular' && liveNote.content.body.trim() && (
@@ -208,15 +246,19 @@ export function SingleNoteOptionsModal({
               <button type="button" onClick={() => void handleShare()}>
                 Share
               </button>
-              <button type="button" onClick={() => void handleCopy()}>
+              <button
+                type="button"
+                className={canCopyText ? '' : 'disabled-action'}
+                aria-disabled={!canCopyText}
+                onClick={() => void handleCopy()}
+              >
                 Copy
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                  onPartialCopy(liveNote);
-                }}
+                className={canCopyText ? '' : 'disabled-action'}
+                aria-disabled={!canCopyText}
+                onClick={handlePartialCopy}
               >
                 Copy partially
               </button>
@@ -241,6 +283,88 @@ export function SingleNoteOptionsModal({
               </button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NoteDetailDialog({
+  note,
+  isBin,
+  onClose,
+  onEdit,
+  onRequestOpenLink,
+}: {
+  note: Note;
+  isBin: boolean;
+  onClose: () => void;
+  onEdit: (note: Note) => void;
+  onRequestOpenLink?: (href: string) => void;
+}) {
+  const showSnackbar = useNotesStore((s) => s.showSnackbar);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="fullscreen-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-header">
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Back
+          </button>
+          <strong>{note.title?.trim() || 'Note Detail'}</strong>
+          {!isBin ? (
+            <button
+              type="button"
+              className="btn-accent"
+              onClick={() => {
+                onClose();
+                onEdit(note);
+              }}
+            >
+              Edit
+            </button>
+          ) : (
+            <span />
+          )}
+        </div>
+        <div className="structured-editor-body">
+          {note.type === 'regular' && (
+            <PlainTextView
+              body={note.content.body}
+              spans={note.content.spans}
+              onCopyMono={(snippet) => {
+                void navigator.clipboard.writeText(snippet);
+                showSnackbar({ message: `Copied: ${snippet}` });
+              }}
+              onOpenLink={onRequestOpenLink}
+            />
+          )}
+          {note.type === 'field' &&
+            [...note.content.fields]
+              .sort((a, b) => a.insertionOrder - b.insertionOrder)
+              .map((entry, idx) => (
+                <div key={entry.id} className="structured-row-card">
+                  <span className="row-num">{idx + 1}.</span>
+                  <strong>{entry.field}</strong>
+                  <span>=</span>
+                  <span>{entry.value}</span>
+                </div>
+              ))}
+          {note.type === 'list' &&
+            [...note.content.items]
+              .sort((a, b) => a.insertionOrder - b.insertionOrder)
+              .map((entry, idx) => (
+                <div key={entry.id} className="structured-row-card">
+                  <span className="row-num">{idx + 1}.</span>
+                  <span>{entry.value}</span>
+                </div>
+              ))}
+          <span className="muted-sm">
+            Created {new Date(note.created_at).toLocaleString()}
+            {isNoteEdited(note)
+              ? ` · Edited ${new Date(note.updated_at).toLocaleString()}`
+              : ''}
+          </span>
         </div>
       </div>
     </div>
@@ -425,9 +549,25 @@ export function FieldValueDialog({
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
+  const fieldInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const valueInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const lastRow = rows[rows.length - 1];
   const lastRowBlank = !lastRow || (!lastRow.field.trim() && !lastRow.value.trim());
+
+  const appendFieldRow = () => {
+    const nextId = crypto.randomUUID();
+    setRows((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        field: '',
+        value: '',
+        insertionOrder: prev.length,
+      },
+    ]);
+    setTimeout(() => fieldInputRefs.current[nextId]?.focus(), 20);
+  };
 
   const isDirty =
     title !== (existingNote?.title ?? '') ||
@@ -488,6 +628,9 @@ export function FieldValueDialog({
             <div key={row.id} className="structured-row-card">
               <span className="row-num">{idx + 1}.</span>
               <input
+                ref={(el) => {
+                  fieldInputRefs.current[row.id] = el;
+                }}
                 type="text"
                 value={row.field}
                 onChange={(e) =>
@@ -495,6 +638,12 @@ export function FieldValueDialog({
                     prev.map((r) => (r.id === row.id ? { ...r, field: e.target.value } : r))
                   )
                 }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    valueInputRefs.current[row.id]?.focus();
+                  }
+                }}
                 placeholder="Field"
               />
               <button
@@ -502,14 +651,14 @@ export function FieldValueDialog({
                 className="field-eq-btn"
                 title="Equals"
                 tabIndex={-1}
-                onClick={(e) => {
-                  const nextInput = e.currentTarget.nextElementSibling as HTMLInputElement | null;
-                  nextInput?.focus();
-                }}
+                onClick={() => valueInputRefs.current[row.id]?.focus()}
               >
                 =
               </button>
               <input
+                ref={(el) => {
+                  valueInputRefs.current[row.id] = el;
+                }}
                 type="text"
                 value={row.value}
                 onChange={(e) =>
@@ -517,6 +666,19 @@ export function FieldValueDialog({
                     prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r))
                   )
                 }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (idx < rows.length - 1) {
+                      const nextRow = rows[idx + 1];
+                      if (nextRow) {
+                        fieldInputRefs.current[nextRow.id]?.focus();
+                        return;
+                      }
+                    }
+                    appendFieldRow();
+                  }
+                }}
                 placeholder="Value"
               />
               <button
@@ -536,17 +698,7 @@ export function FieldValueDialog({
             type="button"
             className="btn-secondary-pill"
             disabled={lastRowBlank}
-            onClick={() =>
-              setRows((prev) => [
-                ...prev,
-                {
-                  id: crypto.randomUUID(),
-                  field: '',
-                  value: '',
-                  insertionOrder: prev.length,
-                },
-              ])
-            }
+            onClick={appendFieldRow}
           >
             + Add Row
           </button>
@@ -606,6 +758,21 @@ export function ListDialog({
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
+  const itemInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const appendListRow = () => {
+    const nextId = crypto.randomUUID();
+    setRows((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        value: '',
+        checked: false,
+        insertionOrder: prev.length,
+      },
+    ]);
+    setTimeout(() => itemInputRefs.current[nextId]?.focus(), 20);
+  };
 
   const isDirty =
     title !== (existingNote?.title ?? '') ||
@@ -665,6 +832,9 @@ export function ListDialog({
             <div key={row.id} className="structured-row-card">
               <span className="row-num">{idx + 1}.</span>
               <input
+                ref={(el) => {
+                  itemInputRefs.current[row.id] = el;
+                }}
                 type="text"
                 value={row.value}
                 onChange={(e) =>
@@ -672,6 +842,19 @@ export function ListDialog({
                     prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r))
                   )
                 }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (idx < rows.length - 1) {
+                      const nextRow = rows[idx + 1];
+                      if (nextRow) {
+                        itemInputRefs.current[nextRow.id]?.focus();
+                        return;
+                      }
+                    }
+                    appendListRow();
+                  }
+                }}
                 placeholder="List item"
               />
               <button
@@ -690,17 +873,7 @@ export function ListDialog({
           <button
             type="button"
             className="btn-secondary-pill"
-            onClick={() =>
-              setRows((prev) => [
-                ...prev,
-                {
-                  id: crypto.randomUUID(),
-                  value: '',
-                  checked: false,
-                  insertionOrder: prev.length,
-                },
-              ])
-            }
+            onClick={appendListRow}
           >
             + Add Row
           </button>

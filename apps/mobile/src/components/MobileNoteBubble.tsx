@@ -122,61 +122,48 @@ export function MobileNoteBubble({
         }}
         onLongPress={() => toggleSelectNote(note.id)}
       >
-      <View style={styles.topRow}>
-        <View style={styles.leftBadges}>
-          {note.type !== 'regular' ? (
-            <View
-              style={[
-                styles.kindPill,
-                {
-                  backgroundColor: palette.surfaceElevated,
-                  borderColor: palette.outlineVariant,
-                },
-              ]}
-            >
-              <Text style={[styles.kindPillText, { color: palette.textSecondary }]}>
-                {note.type === 'field' ? 'Fields-Values' : 'List'}
+      {note.favorite || isDirty || (showPinBadge && note.pinned) || selectionMode ? (
+        <View style={styles.topRow}>
+          <View style={styles.leftBadges}>
+            {note.favorite ? (
+              <MaterialIcons
+                name="star"
+                size={16}
+                color={palette.noteBubbleAccent}
+              />
+            ) : null}
+            {isDirty ? (
+              <Text style={[styles.pendingTag, { color: palette.noteBubbleAccent }]}>
+                Queued
               </Text>
-            </View>
-          ) : null}
-          {note.favorite ? (
-            <MaterialIcons
-              name="star"
-              size={16}
-              color={palette.noteBubbleAccent}
-            />
-          ) : null}
-          {isDirty ? (
-            <Text style={[styles.pendingTag, { color: palette.noteBubbleAccent }]}>
-              Queued
-            </Text>
-          ) : null}
-        </View>
+            ) : null}
+          </View>
 
-        <View style={styles.rightBadges}>
-          {showPinBadge && note.pinned ? (
-            <MaterialIcons
-              name="push-pin"
-              size={15}
-              color={palette.noteBubbleAccent}
-              style={{ transform: [{ rotate: '22deg' }] }}
-            />
-          ) : null}
-          {selectionMode ? (
-            <View
-              style={[
-                styles.selectCircle,
-                { borderColor: palette.noteBubbleAccent },
-                isSelected && { backgroundColor: palette.noteBubbleAccent },
-              ]}
-            >
-              {isSelected ? (
-                <MaterialIcons name="check" size={14} color={palette.onAccent} />
-              ) : null}
-            </View>
-          ) : null}
+          <View style={styles.rightBadges}>
+            {showPinBadge && note.pinned ? (
+              <MaterialIcons
+                name="push-pin"
+                size={15}
+                color={palette.noteBubbleAccent}
+                style={{ transform: [{ rotate: '22deg' }] }}
+              />
+            ) : null}
+            {selectionMode ? (
+              <View
+                style={[
+                  styles.selectCircle,
+                  { borderColor: palette.noteBubbleAccent },
+                  isSelected && { backgroundColor: palette.noteBubbleAccent },
+                ]}
+              >
+                {isSelected ? (
+                  <MaterialIcons name="check" size={14} color={palette.onAccent} />
+                ) : null}
+              </View>
+            ) : null}
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {note.title ? (
         <Text style={[styles.title, { color: palette.textPrimary }]}>{note.title}</Text>

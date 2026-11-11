@@ -1,5 +1,6 @@
 import {
   buildGroupedText,
+  hasCopyableText,
   type Note,
   type NoteFilter,
 } from '@messy-notes/shared';
@@ -7,8 +8,12 @@ import { useAuthStore } from '../store/authStore';
 import { useNotesStore } from '../store/notesStore';
 import {
   ArrowBackIcon,
+  ChecklistIcon,
   CloseIcon,
+  ContentCopyIcon,
   DarkModeIcon,
+  DeleteOutlineIcon,
+  EditIcon,
   LightModeIcon,
   MenuIcon,
   OpenInFullIcon,
@@ -61,11 +66,27 @@ export function TopHeader({
   const selectedList = notes.filter((n) => selectedNoteIds.has(n.id));
 
   if (selectedList.length > 0) {
+    const canCopyAny = selectedList.some(hasCopyableText);
     const handleBulkCopy = async () => {
-      const joined = selectedList.map(buildGroupedText).join('\n\n');
-      await navigator.clipboard.writeText(joined);
+      const parts = selectedList.filter(hasCopyableText).map(buildGroupedText);
+      if (parts.length === 0) {
+        clearSelection();
+        showSnackbar({ message: 'No Text Found' });
+        return;
+      }
+      await navigator.clipboard.writeText(parts.join('\n\n'));
       clearSelection();
       showSnackbar({ message: 'Copied to clipboard!' });
+    };
+
+    const handleSinglePartialCopy = () => {
+      const target = selectedList[0]!;
+      if (!hasCopyableText(target)) {
+        clearSelection();
+        showSnackbar({ message: 'No Text Found' });
+        return;
+      }
+      onPartialCopySelected(target);
     };
 
     return (
@@ -79,7 +100,7 @@ export function TopHeader({
           >
             <CloseIcon size={20} />
           </button>
-          <strong>{selectedList.length} selected</strong>
+          <strong className="selection-count-label">{selectedList.length} selected</strong>
         </div>
 
         <div className="header-actions">
@@ -87,29 +108,43 @@ export function TopHeader({
             <>
               <button
                 type="button"
-                className="btn-ghost"
+                className="icon-btn header-action-pill"
+                aria-label="Edit note"
+                title="Edit"
                 onClick={() => onEditSelected(selectedList[0]!)}
               >
-                Edit
+                <EditIcon size={20} />
               </button>
               <button
                 type="button"
-                className="btn-ghost"
-                onClick={() => onPartialCopySelected(selectedList[0]!)}
+                className={`icon-btn header-action-pill ${canCopyAny ? '' : 'disabled-action'}`}
+                aria-label="Copy partially"
+                aria-disabled={!canCopyAny}
+                title="Copy partially"
+                onClick={handleSinglePartialCopy}
               >
-                Partial
+                <ChecklistIcon size={20} />
               </button>
             </>
           )}
-          <button type="button" className="btn-ghost" onClick={() => void handleBulkCopy()}>
-            Copy
+          <button
+            type="button"
+            className={`icon-btn header-action-pill ${canCopyAny ? '' : 'disabled-action'}`}
+            aria-label="Copy selected notes"
+            aria-disabled={!canCopyAny}
+            title="Copy"
+            onClick={() => void handleBulkCopy()}
+          >
+            <ContentCopyIcon size={19} />
           </button>
           <button
             type="button"
-            className="btn-ghost danger-text"
+            className="icon-btn header-danger-pill"
+            aria-label="Delete selected notes"
+            title="Delete"
             onClick={() => onDeleteSelected(selectedList.map((n) => n.id))}
           >
-            Delete
+            <DeleteOutlineIcon size={20} />
           </button>
         </div>
       </header>
@@ -196,23 +231,26 @@ export function TopHeader({
             <ArrowBackIcon size={22} />
           </button>
         )}
-        <strong className="app-title">{title}</strong>
-        <button
-          type="button"
-          className={`live-pill live-${realtimeStatus}`}
-          onClick={() => void triggerManualSync()}
-          title="Click to sync now"
-        >
-          {!isOnline
-            ? `Offline (${pendingCount} queued)`
-            : syncing
-              ? 'Syncing...'
-              : pendingCount > 0
-                ? `${pendingCount} queued`
-                : realtimeStatus === 'connected'
-                  ? 'Live'
-                  : realtimeStatus}
-        </button>
+        <div className="header-title-stack">
+          <strong className="app-title">{title}</strong>
+          <button
+            type="button"
+            className={`live-pill live-${realtimeStatus}`}
+            onClick={() => void triggerManualSync()}
+            title="Click to sync now"
+          >
+            <span className="live-dot" aria-hidden="true" />
+            {!isOnline
+              ? `Offline (${pendingCount} queued)`
+              : syncing
+                ? 'Syncing...'
+                : pendingCount > 0
+                  ? `${pendingCount} queued`
+                  : realtimeStatus === 'connected'
+                    ? 'Live'
+                    : realtimeStatus}
+          </button>
+        </div>
       </div>
 
       <div className="header-actions">
