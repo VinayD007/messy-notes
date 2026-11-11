@@ -39,6 +39,23 @@ jobs:
         working-directory: apps/mobile
         run: npm install
 
+      - name: Inject Supabase Environment Variables
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          url="$(printf '%s' "$EXPO_PUBLIC_SUPABASE_URL" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          key="$(printf '%s' "$EXPO_PUBLIC_SUPABASE_ANON_KEY" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          if [ -z "$url" ] || [ -z "$key" ]; then
+            echo "::error::Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY repository secrets. Configure both in GitHub Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          {
+            printf 'EXPO_PUBLIC_SUPABASE_URL=%s\n' "$url"
+            printf 'EXPO_PUBLIC_SUPABASE_ANON_KEY=%s\n' "$key"
+          } > .env
+
       - name: Build Android Release APK
         working-directory: apps/mobile/android
         env:
@@ -48,6 +65,11 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
+
+      - name: Clean Up CI Environment File
+        if: always()
+        working-directory: apps/mobile
+        run: rm -f .env
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
