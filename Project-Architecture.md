@@ -109,7 +109,7 @@ On Windows and desktop browser viewports, `apps/web` uses a full-viewport two-co
 App.tsx (.web-desktop-layout)
 ├── Left Persistent Sidebar (NavigationDrawer persistent={true}, 280px fixed rail)
 │   ├── Brand Header (MessyNotes logo + Dark/Light Theme switch)
-│   ├── Primary Views (All Notes + indented .drawer-nested-filters [All, Notes, Fields-Values, Lists] when All Notes active, Favorites, Bin)
+│   ├── Primary Views (All Notes + persistent indented .drawer-nested-filters [All, Notes, Fields-Values, Lists], Favorites, Bin)
 │   └── Bottom Account Footer (.drawer-footer-group -> Account pill [Email, Sign out])
 └── Right Workspace Column (.workspace-main)
     ├── TopHeader (Workspace view/filter title, Live sync badge, Expand Editor button left of Search, Selection controls)
@@ -122,7 +122,7 @@ App.tsx (.web-desktop-layout)
 ```
 
 ### 4.1 Desktop Layout Rules & Responsive Behavior
-- **Persistent Left Sidebar (`>= 769px`):** Always anchored on the left side (`280px` width) displaying navigation views (`All Notes`, `Favorites`, `Bin`) and a bottom **Account Pill** grouping the signed-in email ID and a `Sign out` pill button. When `All Notes` (`home`) is active, the four category filter pills (**All**, **Notes**, **Fields-Values**, **Lists**) expand indented directly beneath **All Notes** (`.drawer-nested-filters`); switching to `Favorites` or `Bin` collapses the nested filter pills and isolates feed queries (`getDisplayedFavorites`, `getDisplayedBinNotes`) from `filterType`.
+- **Persistent Left Sidebar (`>= 769px`):** Always anchored on the left side (`280px` width) displaying navigation views (`All Notes`, `Favorites`, `Bin`) and a bottom **Account Pill** grouping the signed-in email ID and a `Sign out` pill button. The four category filter pills (**All**, **Notes**, **Fields-Values**, **Lists**) remain permanently expanded and indented directly beneath **All Notes** (`.drawer-nested-filters`); when **Favorites** or **Bin** is active, no sub-filter chip shows an active highlight, feed queries (`getDisplayedFavorites`, `getDisplayedBinNotes`) ignore `filterType`, and clicking any sub-filter chip navigates back to `home` with that filter active.
 - **Header Maximize Control (`Expand editor`):** Relocated from the floating bottom-right stack into the top header directly to the left of the search icon across both mobile and web Home views, opening the plain-text expanded editor (`MobileRegularEditorModal` / `ExpandedRegularDialog`) with `"Write a note..."` placeholder and the explicit `Mono` toggle button.
 - **Plain-Text Note Rendering (No Markdown):** Regular notes across `PlainTextView` (web) and `MobilePlainTextView` (mobile) use `buildStyledSegments` to render literal plain text with no Markdown parsing (headings, bold, italic, strikethrough, blockquotes, tables, or Markdown syntax helpers removed), preserving only explicit monospace tap-to-copy spans and auto-detected clickable URLs.
 - **Responsive Narrow Viewport (`<= 768px`):** Automatically collapses the persistent sidebar behind the top-left menu button drawer overlay (`drawerOpen`) while retaining the nested filters and account pill inside the slide-out drawer.

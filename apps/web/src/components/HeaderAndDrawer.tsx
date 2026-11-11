@@ -341,23 +341,20 @@ export function NavigationDrawer({
         <button
           type="button"
           className={`drawer-item ${activeView === 'home' ? 'active' : ''}`}
-          aria-expanded={activeView === 'home'}
           onClick={() => handleNavigate('home')}
         >
           All Notes
         </button>
-        {activeView === 'home' && (
-          <div
-            className="drawer-nested-filters"
-            role="group"
-            aria-label="All Notes filters"
-          >
-            <HomeFilterBar
-              vertical
-              onAfterSelect={persistent ? undefined : onClose}
-            />
-          </div>
-        )}
+        <div
+          className="drawer-nested-filters"
+          role="group"
+          aria-label="All Notes filters"
+        >
+          <HomeFilterBar
+            vertical
+            onAfterSelect={persistent ? undefined : onClose}
+          />
+        </div>
         <button
           type="button"
           className={`drawer-item ${activeView === 'favorites' ? 'active' : ''}`}
