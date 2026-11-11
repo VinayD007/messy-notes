@@ -1,7 +1,12 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import { clearAllLocalData } from '../lib/mmkvStorage';
-import { registerSupabaseAppStateRefresh, supabase } from '../lib/supabase';
+import {
+  isSupabaseConfigured,
+  registerSupabaseAppStateRefresh,
+  supabase,
+  SUPABASE_CONFIG_ERROR,
+} from '../lib/supabase';
 import { syncEngine } from '../sync/syncEngine';
 
 interface AuthState {
@@ -25,18 +30,39 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   initialize: () => {
+    if (!isSupabaseConfigured) {
+      set({
+        session: null,
+        user: null,
+        initialized: true,
+        error: SUPABASE_CONFIG_ERROR,
+      });
+      return () => {};
+    }
+
     let active = true;
     const stopAppStateRefresh = registerSupabaseAppStateRefresh();
 
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!active) return;
-      set({
-        session: data.session ?? null,
-        user: data.session?.user ?? null,
-        initialized: true,
-        error: error ? error.message : null,
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!active) return;
+        set({
+          session: data.session ?? null,
+          user: data.session?.user ?? null,
+          initialized: true,
+          error: error ? error.message : null,
+        });
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        set({
+          session: null,
+          user: null,
+          initialized: true,
+          error: err instanceof Error ? err.message : 'Failed to initialize session',
+        });
       });
-    });
 
     const {
       data: { subscription },
@@ -57,6 +83,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signIn: async (email, password) => {
+    if (!isSupabaseConfigured) {
+      set({ loading: false, error: SUPABASE_CONFIG_ERROR });
+      throw new Error(SUPABASE_CONFIG_ERROR);
+    }
+
     set({ loading: true, error: null });
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
@@ -77,6 +108,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signUp: async (email, password) => {
+    if (!isSupabaseConfigured) {
+      set({ loading: false, error: SUPABASE_CONFIG_ERROR });
+      throw new Error(SUPABASE_CONFIG_ERROR);
+    }
+
     set({ loading: true, error: null });
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),

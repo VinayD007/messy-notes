@@ -93,6 +93,16 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+
+        // Explicitly bundle mobile ABIs into a single universal APK alongside gradle.properties
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
+    }
+    splits {
+        abi {
+            enable false
+        }
     }
     signingConfigs {
         debug {

@@ -75,13 +75,19 @@ const ChunkedSecureStoreAdapter = {
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. Copy apps/mobile/.env.example to apps/mobile/.env.'
-  );
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const SUPABASE_CONFIG_ERROR =
+  'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. Configure environment variables before building.';
+
+if (!isSupabaseConfigured) {
+  console.warn(SUPABASE_CONFIG_ERROR);
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+// Keep module import non-fatal when CI or offline builds lack .env; authStore surfaces SUPABASE_CONFIG_ERROR in UI.
+export const supabase = createClient<Database>(
+  supabaseUrl || 'https://placeholder.supabase.invalid',
+  supabaseAnonKey || 'placeholder-anon-key',
+  {
   auth: {
     storage: ChunkedSecureStoreAdapter,
     autoRefreshToken: true,
