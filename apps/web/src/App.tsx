@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  applyPinOrdering,
   getDisplayedBinNotes,
   getDisplayedFavorites,
   getDisplayedNotes,
+  hasNotePatchChanges,
   type FieldNote,
   type ListNote,
   type Note,
@@ -14,10 +16,10 @@ import {
   FloatingComposerActions,
 } from './components/BottomComposer';
 import {
-  HomeFilterBar,
   NavigationDrawer,
   TopHeader,
 } from './components/HeaderAndDrawer';
+import { DownloadIcon } from './components/MaterialIcons';
 import { NoteBubble } from './components/NoteBubble';
 import {
   ConfirmDialog,
@@ -187,10 +189,10 @@ export function App() {
 
   const displayedNotes =
     activeView === 'favorites'
-      ? getDisplayedFavorites(notes, favSearchQuery)
+      ? applyPinOrdering(getDisplayedFavorites(notes, favSearchQuery))
       : activeView === 'bin'
         ? getDisplayedBinNotes(notes, binSearchQuery)
-        : getDisplayedNotes(notes, filterType, homeSearchQuery);
+        : applyPinOrdering(getDisplayedNotes(notes, filterType, homeSearchQuery));
 
   const binCount = notes.filter((n) => n.deleted_at !== null).length;
   const selectionMode = selectedNoteIds.size > 0;
@@ -217,6 +219,38 @@ export function App() {
     feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleDownloadPhoto = async (url: string) => {
+    const cleanPath = url.split('?')[0]?.split('#')[0] ?? '';
+    const extMatch = /\.([a-zA-Z0-9]{2,5})$/.exec(cleanPath);
+    const ext = extMatch?.[1]?.toLowerCase() ?? 'jpg';
+    const filename = `messynote-${Date.now()}.${ext}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      showSnackbar({ message: 'Image saved to downloads' });
+    } catch {
+      const fallback = document.createElement('a');
+      fallback.href = url;
+      fallback.download = filename;
+      fallback.target = '_blank';
+      fallback.rel = 'noopener noreferrer';
+      document.body.appendChild(fallback);
+      fallback.click();
+      fallback.remove();
+      showSnackbar({ message: 'Download started' });
+    }
+  };
+
   const handleSendRegular = async () => {
     await createRegularNote({
       userId: user.id,
@@ -234,74 +268,98 @@ export function App() {
     activeView === 'home' && !searchActive && !selectionMode && !composerExpanded;
 
   return (
-    <div className="messynote-shell">
-      <TopHeader
-        binCount={binCount}
-        onOpenDrawer={() => setDrawerOpen(true)}
-        onEmptyBin={() => setConfirmEmptyBin(true)}
-        onEditSelected={(note) => {
-          clearSelection();
-          setEditingNote(note);
-        }}
-        onPartialCopySelected={(note) => {
-          clearSelection();
-          setPartialCopyNote(note);
-        }}
-        onDeleteSelected={(ids) => setPendingBinIds(ids)}
+    <div className="messynote-shell web-desktop-layout">
+      <NavigationDrawer
+        persistent
+        open
+        themeMode={themeMode}
+        onToggleTheme={() =>
+          setThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))
+        }
+        onClose={() => setDrawerOpen(false)}
       />
 
-      {activeView === 'home' && <HomeFilterBar />}
-      {error && <div className="banner-error">{error}</div>}
+      {showComposer && plusMenuOpen && (
+        <div
+          className="plus-menu-scrim"
+          aria-hidden="true"
+          onClick={() => setPlusMenuOpen(false)}
+        />
+      )}
 
-      <div className="feed-stage">
-        <div ref={feedRef} className="feed-scroll">
-          {displayedNotes.length === 0 ? (
-            <div className="empty-feed">{emptyMessage}</div>
-          ) : (
-            <div className="feed-list">
-              {displayedNotes.map((note) => (
-                <NoteBubble
-                  key={note.id}
-                  note={note}
-                  isSelected={selectedNoteIds.has(note.id)}
-                  selectionMode={selectionMode}
-                  showPinBadge={activeView === 'home' && filterType !== 'all'}
-                  onOpenOptions={setOptionsNote}
-                  onRequestOpenLink={setLinkToOpen}
-                  onPreviewPhoto={setPreviewPhotoUrl}
-                />
-              ))}
-            </div>
-          )}
+      <main className="workspace-main">
+        <TopHeader
+          binCount={binCount}
+          onOpenDrawer={() => setDrawerOpen(true)}
+          onExpandEditor={() => {
+            setPlusMenuOpen(false);
+            setComposerExpanded(true);
+          }}
+          onEmptyBin={() => setConfirmEmptyBin(true)}
+          onEditSelected={(note) => {
+            clearSelection();
+            setEditingNote(note);
+          }}
+          onPartialCopySelected={(note) => {
+            clearSelection();
+            setPartialCopyNote(note);
+          }}
+          onDeleteSelected={(ids) => setPendingBinIds(ids)}
+        />
+
+        {error && <div className="banner-error">{error}</div>}
+
+        <div className="feed-stage">
+          <div ref={feedRef} className="feed-scroll">
+            {displayedNotes.length === 0 ? (
+              <div className="empty-feed">{emptyMessage}</div>
+            ) : (
+              <div className="feed-list">
+                {displayedNotes.map((note) => (
+                  <NoteBubble
+                    key={note.id}
+                    note={note}
+                    isSelected={selectedNoteIds.has(note.id)}
+                    selectionMode={selectionMode}
+                    showPinBadge={activeView !== 'bin'}
+                    onOpenOptions={setOptionsNote}
+                    onRequestOpenLink={setLinkToOpen}
+                    onPreviewPhoto={setPreviewPhotoUrl}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {showComposer && (
-          <FloatingComposerActions
-            plusMenuOpen={plusMenuOpen}
-            onTogglePlusMenu={() => setPlusMenuOpen((prev) => !prev)}
-            onExpandFullScreen={() => {
-              setPlusMenuOpen(false);
-              setComposerExpanded(true);
-            }}
-            onOpenNewFieldValue={() => setNewFieldDialogOpen(true)}
-            onOpenNewList={() => setNewListDialogOpen(true)}
-          />
+          <div className="composer-dock-floating">
+            <div className="composer-floating-wrap">
+              <FloatingComposerActions
+                plusMenuOpen={plusMenuOpen}
+                onTogglePlusMenu={() => setPlusMenuOpen((prev) => !prev)}
+                onOpenNewFieldValue={() => setNewFieldDialogOpen(true)}
+                onOpenNewList={() => setNewListDialogOpen(true)}
+              />
+              <BottomComposer
+                draftText={draftText}
+                draftSpans={draftSpans}
+                draftPhotos={draftPhotos}
+                onChangeDraft={(t, s) => {
+                  setDraftText(t);
+                  setDraftSpans(s);
+                }}
+                onChangePhotos={setDraftPhotos}
+                onFocusInput={() => setPlusMenuOpen(false)}
+                onSend={() => {
+                  setPlusMenuOpen(false);
+                  return handleSendRegular();
+                }}
+              />
+            </div>
+          </div>
         )}
-      </div>
-
-      {showComposer && (
-        <BottomComposer
-          draftText={draftText}
-          draftSpans={draftSpans}
-          draftPhotos={draftPhotos}
-          onChangeDraft={(t, s) => {
-            setDraftText(t);
-            setDraftSpans(s);
-          }}
-          onChangePhotos={setDraftPhotos}
-          onSend={handleSendRegular}
-        />
-      )}
+      </main>
 
       {snackbar && (
         <div className="snackbar">
@@ -379,6 +437,17 @@ export function App() {
           existingPhotos={editingNote.photo_attachments}
           onCancel={() => setEditingNote(null)}
           onSave={async (trimmedBody, trimmedSpans, keptPhotos, newFiles) => {
+            if (
+              newFiles.length === 0 &&
+              !hasNotePatchChanges(editingNote, {
+                content: { body: trimmedBody, spans: trimmedSpans },
+                photo_attachments: keptPhotos,
+              })
+            ) {
+              setEditingNote(null);
+              return;
+            }
+
             const nextPhotos =
               newFiles.length > 0
                 ? await uploadPhotosForNote(
@@ -517,8 +586,25 @@ export function App() {
       )}
 
       {previewPhotoUrl && (
-        <div className="modal-backdrop" onClick={() => setPreviewPhotoUrl(null)}>
-          <img src={previewPhotoUrl} alt="Attachment preview" className="photo-lightbox" />
+        <div className="modal-backdrop photo-viewer-backdrop" onClick={() => setPreviewPhotoUrl(null)}>
+          <button
+            type="button"
+            className="photo-viewer-download-btn"
+            aria-label="Download image"
+            title="Download image"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleDownloadPhoto(previewPhotoUrl);
+            }}
+          >
+            <DownloadIcon size={22} />
+          </button>
+          <img
+            src={previewPhotoUrl}
+            alt="Attachment preview"
+            className="photo-lightbox"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

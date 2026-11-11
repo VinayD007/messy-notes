@@ -1,10 +1,12 @@
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import * as FileSystem from 'expo-file-system';
 import { AppState, type AppStateStatus } from 'react-native';
 import {
   createSupabaseNotesRemote,
   getRetryBackoffMs,
   replayOutboxQueue,
+  uploadPhotoToNoteBucket,
   type Note,
   type NoteRow,
 } from '@messy-notes/shared';
@@ -43,6 +45,30 @@ export interface SyncCallbacks {
 
 function isNetworkOnline(state: NetInfoState): boolean {
   return Boolean(state.isConnected && state.isInternetReachable !== false);
+}
+
+const BASE64_CHARS =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function decodeBase64ToBytes(base64: string): Uint8Array {
+  const clean = base64.replace(/[^A-Za-z0-9+/=]/g, '');
+  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
+  const outputLen = Math.max(0, (clean.length * 3) / 4 - padding);
+  const bytes = new Uint8Array(outputLen);
+  let outIdx = 0;
+
+  for (let i = 0; i < clean.length; i += 4) {
+    const c1 = BASE64_CHARS.indexOf(clean[i] ?? 'A');
+    const c2 = BASE64_CHARS.indexOf(clean[i + 1] ?? 'A');
+    const c3 = BASE64_CHARS.indexOf(clean[i + 2] ?? 'A');
+    const c4 = BASE64_CHARS.indexOf(clean[i + 3] ?? 'A');
+    const chunk = (c1 << 18) | (c2 << 12) | ((c3 & 63) << 6) | (c4 & 63);
+    if (outIdx < outputLen) bytes[outIdx++] = (chunk >> 16) & 255;
+    if (outIdx < outputLen) bytes[outIdx++] = (chunk >> 8) & 255;
+    if (outIdx < outputLen) bytes[outIdx++] = chunk & 255;
+  }
+
+  return bytes;
 }
 
 class OfflineSyncEngine {
@@ -151,7 +177,12 @@ class OfflineSyncEngine {
 
     try {
       const activeUserId = this.userId;
-      await this.flushPhotoOutbox();
+      let photoError: string | null = null;
+      try {
+        await this.flushPhotoOutbox();
+      } catch (err) {
+        photoError = err instanceof Error ? err.message : 'Photo upload failed';
+      }
 
       const mutations = await getOutboxMutations();
       const replayResult = await replayOutboxQueue(
@@ -178,6 +209,9 @@ class OfflineSyncEngine {
         syncError = replayResult.lastError;
       } else {
         await this.pullDeltas(activeUserId);
+        if (photoError) {
+          syncError = photoError;
+        }
       }
 
       const snapshot = await this.emitLocalSnapshot();
@@ -268,18 +302,16 @@ class OfflineSyncEngine {
   private async flushPhotoOutbox(): Promise<void> {
     const entries = await getPhotoOutboxEntries();
     for (const entry of entries) {
-      const response = await fetch(entry.local_uri);
-      const buffer = await response.arrayBuffer();
-      const { error } = await supabase.storage
-        .from('note-photos')
-        .upload(entry.storage_path, buffer, {
-          contentType: entry.mime_type,
-          upsert: true,
-        });
-
-      if (error) {
-        throw new Error(`Photo upload failed: ${error.message}`);
-      }
+      const base64 = await FileSystem.readAsStringAsync(entry.local_uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const bytes = decodeBase64ToBytes(base64);
+      await uploadPhotoToNoteBucket(
+        supabase,
+        entry.storage_path,
+        bytes,
+        entry.mime_type
+      );
       await removePhotoOutboxEntry(entry.storage_path);
     }
   }

@@ -4,6 +4,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -35,71 +36,86 @@ export function AuthScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior="height"
-      style={styles.container}
-    >
-      <View style={styles.card}>
-        <Image
-          source={require('../../assets/icon.png')}
-          style={styles.brandIcon}
-        />
-        <Text style={styles.title}>MessyNotes</Text>
-        <Text style={styles.subtitle}>
-          Offline-first notes with real-time Supabase sync
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor={DarkMessNoteColors.textMuted}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password (min 6 chars)"
-          placeholderTextColor={DarkMessNoteColors.textMuted}
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        {infoMessage ? <Text style={styles.infoText}>{infoMessage}</Text> : null}
-
-        <Pressable
-          style={[styles.primaryBtn, loading && styles.disabledBtn]}
-          disabled={loading}
-          onPress={() => void handleSubmit()}
-        >
-          {loading ? (
-            <ActivityIndicator color={DarkMessNoteColors.onAccent} />
-          ) : (
-            <Text style={styles.primaryBtnText}>
-              {mode === 'signin' ? 'Sign In' : 'Create Account'}
-            </Text>
-          )}
-        </Pressable>
-
-        <Pressable
-          style={styles.linkBtn}
-          onPress={() => {
-            clearError();
-            setInfoMessage(null);
-            setMode((prev) => (prev === 'signin' ? 'signup' : 'signin'));
-          }}
-        >
-          <Text style={styles.linkText}>
-            {mode === 'signin'
-              ? "Don't have an account? Sign up"
-              : 'Already have an account? Sign in'}
+    <KeyboardAvoidingView behavior="height" style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.card}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.brandIcon}
+          />
+          <Text style={styles.title}>MessyNotes</Text>
+          <Text style={styles.subtitle}>
+            Calm, offline-first notes with real-time Supabase sync
           </Text>
-        </Pressable>
-      </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor={DarkMessNoteColors.textMuted}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Password (min 6 chars)"
+            placeholderTextColor={DarkMessNoteColors.textMuted}
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+
+          {error ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+          {infoMessage ? (
+            <View style={styles.infoBox}>
+              <Text style={styles.infoText}>{infoMessage}</Text>
+            </View>
+          ) : null}
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              loading && styles.disabledBtn,
+              pressed && { opacity: 0.88 },
+            ]}
+            disabled={loading}
+            onPress={() => void handleSubmit()}
+          >
+            {loading ? (
+              <ActivityIndicator color={DarkMessNoteColors.onAccent} />
+            ) : (
+              <Text style={styles.primaryBtnText}>
+                {mode === 'signin' ? 'Sign In' : 'Create Account'}
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.linkBtn, pressed && { opacity: 0.72 }]}
+            onPress={() => {
+              clearError();
+              setInfoMessage(null);
+              setMode((prev) => (prev === 'signin' ? 'signup' : 'signin'));
+            }}
+          >
+            <Text style={styles.linkText}>
+              {mode === 'signin'
+                ? "Don't have an account? Sign up"
+                : 'Already have an account? Sign in'}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -108,25 +124,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: DarkMessNoteColors.bg,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: DarkMessNoteColors.surfaceContainerHigh,
+    backgroundColor: DarkMessNoteColors.surfaceCard,
     borderRadius: MessNoteMetrics.dialogCornerRadius,
     padding: 26,
     borderWidth: 1,
     borderColor: DarkMessNoteColors.outlineVariant,
     gap: 14,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
   },
   brandIcon: {
-    width: 64,
-    height: 64,
+    width: 68,
+    height: 68,
     borderRadius: 18,
     alignSelf: 'center',
     marginBottom: 4,
@@ -143,20 +157,24 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    backgroundColor: DarkMessNoteColors.surfaceContainerLow,
+    backgroundColor: DarkMessNoteColors.surfaceElevated,
     borderColor: DarkMessNoteColors.outlineVariant,
     borderWidth: 1,
     borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 14,
+    minHeight: 52,
     color: DarkMessNoteColors.textPrimary,
     ...MessNoteTypography.bodyLarge,
   },
   primaryBtn: {
     backgroundColor: DarkMessNoteColors.noteBubbleAccent,
     borderRadius: 999,
-    paddingVertical: 13,
+    minHeight: 52,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 4,
   },
   disabledBtn: {
@@ -164,23 +182,43 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: {
     color: DarkMessNoteColors.onAccent,
+    ...MessNoteTypography.labelLarge,
     fontWeight: '700',
-    fontSize: 15,
   },
   linkBtn: {
-    paddingVertical: 8,
+    borderRadius: 999,
+    minHeight: 44,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   linkText: {
-    color: DarkMessNoteColors.noteBubbleAccent,
-    fontSize: 13,
+    color: DarkMessNoteColors.textPrimary,
+    ...MessNoteTypography.labelLarge,
+  },
+  errorBox: {
+    backgroundColor: 'rgba(255, 69, 58, 0.14)',
+    borderColor: DarkMessNoteColors.destructiveAction,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   errorText: {
     color: DarkMessNoteColors.destructiveAction,
-    fontSize: 13,
+    ...MessNoteTypography.bodyMedium,
+  },
+  infoBox: {
+    backgroundColor: DarkMessNoteColors.primaryContainer,
+    borderColor: DarkMessNoteColors.noteBubbleAccent,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   infoText: {
     color: DarkMessNoteColors.noteBubbleAccent,
-    fontSize: 13,
+    ...MessNoteTypography.bodyMedium,
   },
 });

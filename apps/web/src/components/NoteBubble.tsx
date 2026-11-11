@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+  isNoteEdited,
   type Note,
   type PhotoAttachment,
 } from '@messy-notes/shared';
 import { useNotesStore } from '../store/notesStore';
 import { CheckIcon, PushPinIcon, StarIcon } from './MaterialIcons';
-import { MarkdownRenderer } from './MarkdownRenderer';
+import { PlainTextView } from './PlainTextView';
 
 interface NoteBubbleProps {
   note: Note;
@@ -29,7 +30,6 @@ export function NoteBubble({
   const {
     dirtyIds,
     toggleSelectNote,
-    toggleListItemChecked,
     showSnackbar,
     getSignedPhotoUrl,
   } = useNotesStore();
@@ -123,11 +123,11 @@ export function NoteBubble({
 
       {note.type === 'regular' && (
         <div className="bubble-text">
-          <MarkdownRenderer
+          <PlainTextView
             body={note.content.body}
             spans={note.content.spans}
             stopBubbleClick
-            onCopyCode={(snippet) => {
+            onCopyMono={(snippet) => {
               void handleCopyMono(snippet);
             }}
             onOpenLink={(href) => {
@@ -150,7 +150,20 @@ export function NoteBubble({
                 <span className="row-num">{idx + 1}.</span>
                 <span className="field-name">{entry.field}</span>
                 <span className="field-eq">=</span>
-                <span className="field-val">{entry.value}</span>
+                <button
+                  type="button"
+                  className="field-val-mono"
+                  title="Click to copy value"
+                  onClick={(e) => {
+                    if (selectionMode) {
+                      return;
+                    }
+                    e.stopPropagation();
+                    void handleCopyMono(entry.value);
+                  }}
+                >
+                  {entry.value}
+                </button>
               </div>
             ))}
         </div>
@@ -161,21 +174,7 @@ export function NoteBubble({
           {[...note.content.items]
             .sort((a, b) => a.insertionOrder - b.insertionOrder)
             .map((item, idx) => (
-              <div
-                key={item.id}
-                className={`bubble-list-row ${item.checked ? 'checked' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (selectionMode) {
-                    toggleSelectNote(note.id);
-                  } else {
-                    void toggleListItemChecked(note.id, item.id);
-                  }
-                }}
-              >
-                <span className={`mini-check ${item.checked ? 'checked' : ''}`}>
-                  {item.checked ? <CheckIcon size={12} /> : null}
-                </span>
+              <div key={item.id} className="bubble-list-row">
                 <span className="row-num">{idx + 1}.</span>
                 <span className="list-val">{item.value}</span>
               </div>
@@ -199,7 +198,7 @@ export function NoteBubble({
             hour: '2-digit',
             minute: '2-digit',
           })}
-          {note.updated_at !== note.created_at ? ' · edited' : ''}
+          {isNoteEdited(note) ? ' · edited' : ''}
         </span>
         {!selectionMode && (
           <button

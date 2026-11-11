@@ -3,6 +3,7 @@ import {
   createSupabaseNotesRemote,
   getRetryBackoffMs,
   replayOutboxQueue,
+  uploadPhotoToNoteBucket,
   type Note,
   type NoteRow,
 } from '@messy-notes/shared';
@@ -151,7 +152,12 @@ class WebOfflineSyncEngine {
 
     try {
       const activeUserId = this.userId;
-      await this.flushPhotoOutbox();
+      let photoError: string | null = null;
+      try {
+        await this.flushPhotoOutbox();
+      } catch (err) {
+        photoError = err instanceof Error ? err.message : 'Photo upload failed';
+      }
 
       const mutations = await getWebOutboxMutations();
       const replayResult = await replayOutboxQueue(
@@ -178,6 +184,9 @@ class WebOfflineSyncEngine {
         syncError = replayResult.lastError;
       } else {
         await this.pullDeltas(activeUserId);
+        if (photoError) {
+          syncError = photoError;
+        }
       }
 
       await this.emitLocalSnapshot();
@@ -261,16 +270,12 @@ class WebOfflineSyncEngine {
   private async flushPhotoOutbox(): Promise<void> {
     const entries = await getWebPhotoOutboxEntries();
     for (const entry of entries) {
-      const { error } = await supabase.storage
-        .from('note-photos')
-        .upload(entry.storagePath, entry.blob, {
-          contentType: entry.mimeType,
-          upsert: true,
-        });
-
-      if (error) {
-        throw new Error(`Photo upload failed: ${error.message}`);
-      }
+      await uploadPhotoToNoteBucket(
+        supabase,
+        entry.storagePath,
+        entry.blob,
+        entry.mimeType
+      );
       await removeWebPhotoOutboxEntry(entry.storagePath);
     }
   }

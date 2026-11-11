@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { MaterialIcons } from '@expo/vector-icons';
+import { useRef, useState } from 'react';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
+import * as Haptics from 'expo-haptics';
 import {
-  Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -19,6 +20,8 @@ import {
   adjustSpansForTextChange,
   adjustSpansForTrim,
   buildGroupedText,
+  canPinNote,
+  isNoteEdited,
   joinPartialCopyTokens,
   toggleMonoSpan,
   tokenizeForPartialCopy,
@@ -33,13 +36,151 @@ import {
   type TextSpan,
 } from '@messy-notes/shared';
 import { useNotesStore } from '../store/notesStore';
-import { MobileMarkdownView } from './MobileMarkdownView';
+import { MobilePlainTextView } from './MobilePlainTextView';
+
+export interface MobileConfirmConfig {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+  icon?: keyof typeof MaterialIcons.glyphMap;
+  onConfirm: () => void | Promise<void>;
+}
+
+export function MobileConfirmDialog({
+  visible,
+  palette,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = 'Cancel',
+  destructive = false,
+  icon,
+  asOverlay = false,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  palette: MessyNotePalette;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+  icon?: keyof typeof MaterialIcons.glyphMap;
+  asOverlay?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  if (!visible) return null;
+
+  const badgeIcon: keyof typeof MaterialIcons.glyphMap =
+    icon ?? (destructive ? 'delete-outline' : 'info-outline');
+
+  const content = (
+    <Pressable
+      style={[
+        styles.confirmBackdrop,
+        asOverlay && styles.confirmOverlayBackdrop,
+      ]}
+      onPress={onCancel}
+    >
+      <Pressable
+        style={[
+          styles.confirmCard,
+          {
+            backgroundColor: palette.surfaceCard,
+            borderColor: palette.outlineVariant,
+          },
+        ]}
+        onPress={() => undefined}
+      >
+        <View
+          style={[
+            styles.confirmIconCircle,
+            {
+              backgroundColor: destructive
+                ? 'rgba(255, 69, 58, 0.16)'
+                : palette.primaryContainer,
+              borderColor: destructive
+                ? 'rgba(255, 69, 58, 0.35)'
+                : palette.outlineVariant,
+            },
+          ]}
+        >
+          <MaterialIcons
+            name={badgeIcon}
+            size={24}
+            color={destructive ? palette.destructiveAction : palette.noteBubbleAccent}
+          />
+        </View>
+
+        <Text style={[styles.confirmTitle, { color: palette.textPrimary }]}>
+          {title}
+        </Text>
+        <Text style={[styles.confirmMessage, { color: palette.textSecondary }]}>
+          {message}
+        </Text>
+
+        <View style={styles.confirmActions}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.confirmSecondaryBtn,
+              {
+                backgroundColor: palette.surfaceElevated,
+                borderColor: palette.outlineVariant,
+              },
+              pressed && { opacity: 0.78 },
+            ]}
+            onPress={onCancel}
+          >
+            <Text style={[styles.confirmBtnText, { color: palette.textPrimary }]}>
+              {cancelLabel}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.confirmPrimaryBtn,
+              {
+                backgroundColor: destructive
+                  ? palette.destructiveAction
+                  : palette.noteBubbleAccent,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+            onPress={() => void onConfirm()}
+          >
+            <Text
+              style={[
+                styles.confirmBtnText,
+                { color: destructive ? '#FFFFFF' : palette.onAccent },
+              ]}
+            >
+              {confirmLabel}
+            </Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Pressable>
+  );
+
+  if (asOverlay) {
+    return content;
+  }
+
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onCancel}>
+      {content}
+    </Modal>
+  );
+}
 
 export function MobileOptionsSheet({
   note,
   palette,
   activeView,
-  filterType,
+  filterType: _filterType,
   onClose,
   onViewDetail,
   onEdit,
@@ -60,14 +201,62 @@ export function MobileOptionsSheet({
   onRequestPermDelete: (id: string) => void;
   onRequestOpenLink?: (url: string) => void;
 }) {
-  const { toggleFavorite, togglePin, restoreNotes, showSnackbar } = useNotesStore();
-  if (!note) return null;
+  const { notes, toggleFavorite, togglePin, restoreNotes, showSnackbar } = useNotesStore();
+  const [optimisticFavorite, setOptimisticFavorite] = useState<{
+    noteId: string;
+    favorite: boolean;
+  } | null>(null);
+  const [optimisticPin, setOptimisticPin] = useState<{
+    noteId: string;
+    pinned: boolean;
+  } | null>(null);
 
-  const isBin = activeView === 'bin' || note.deleted_at !== null;
-  const showPinAction = !isBin && activeView === 'home' && filterType !== 'all';
+  const liveNote = note ? notes.find((n) => n.id === note.id) ?? note : null;
+  if (!liveNote) return null;
+
+  const isFavorite =
+    optimisticFavorite?.noteId === liveNote.id
+      ? optimisticFavorite.favorite
+      : liveNote.favorite;
+  const isPinned =
+    optimisticPin?.noteId === liveNote.id
+      ? optimisticPin.pinned
+      : liveNote.pinned;
+  const isBin = activeView === 'bin' || liveNote.deleted_at !== null;
+
+  const handleToggleFavorite = () => {
+    const nextFavorite = !isFavorite;
+    setOptimisticFavorite({ noteId: liveNote.id, favorite: nextFavorite });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void toggleFavorite(liveNote.id).finally(() => {
+      setOptimisticFavorite((current) =>
+        current?.noteId === liveNote.id && current.favorite === nextFavorite
+          ? null
+          : current
+      );
+    });
+  };
+
+  const handleTogglePin = () => {
+    const check = canPinNote(notes, { ...liveNote, pinned: isPinned });
+    if (!check.allowed) {
+      showSnackbar({ message: check.reason! });
+      return;
+    }
+    const nextPinned = !isPinned;
+    setOptimisticPin({ noteId: liveNote.id, pinned: nextPinned });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void togglePin(liveNote.id).finally(() => {
+      setOptimisticPin((current) =>
+        current?.noteId === liveNote.id && current.pinned === nextPinned
+          ? null
+          : current
+      );
+    });
+  };
 
   const handleCopy = async () => {
-    await Clipboard.setStringAsync(buildGroupedText(note));
+    await Clipboard.setStringAsync(buildGroupedText(liveNote));
     showSnackbar({ message: 'Copied to clipboard!' });
     onClose();
   };
@@ -75,8 +264,8 @@ export function MobileOptionsSheet({
   const handleShare = async () => {
     try {
       await Share.share({
-        title: note.title ?? undefined,
-        message: buildGroupedText(note),
+        title: liveNote.title ?? undefined,
+        message: buildGroupedText(liveNote),
       });
     } catch {
       showSnackbar({ message: 'No app available to share' });
@@ -85,132 +274,170 @@ export function MobileOptionsSheet({
   };
 
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <Pressable style={styles.bottomSheetBackdrop} onPress={onClose}>
         <Pressable
           style={[
-            styles.sheet,
-            { backgroundColor: palette.surfaceContainerHigh, borderColor: palette.outlineVariant },
+            styles.bottomSheet,
+            { backgroundColor: palette.surfaceCard, borderColor: palette.outlineVariant },
           ]}
           onPress={() => undefined}
         >
+          <View
+            style={[styles.sheetHandle, { backgroundColor: palette.textMuted }]}
+          />
           <View style={[styles.sheetHeader, { borderBottomColor: palette.outlineVariant }]}>
             <Text style={[styles.sheetTitle, { color: palette.textPrimary }]}>
-              {note.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
+              {liveNote.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
             </Text>
             {!isBin ? (
-              <Pressable onPress={() => void toggleFavorite(note.id)}>
-                <MaterialIcons
-                  name={note.favorite ? 'star' : 'star-border'}
-                  size={24}
-                  color={note.favorite ? palette.noteBubbleAccent : palette.textMuted}
-                />
-              </Pressable>
+              <View style={styles.sheetHeaderActions}>
+                <Pressable
+                  style={[
+                    styles.starToggleBtn,
+                    { backgroundColor: palette.surfaceElevated },
+                    isPinned && { backgroundColor: palette.primaryContainer },
+                  ]}
+                  onPress={handleTogglePin}
+                  accessibilityLabel={isPinned ? 'Unpin note' : 'Pin note'}
+                >
+                  <MaterialCommunityIcons
+                    name={isPinned ? 'pin' : 'pin-outline'}
+                    size={22}
+                    color={isPinned ? palette.noteBubbleAccent : palette.textMuted}
+                  />
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.starToggleBtn,
+                    { backgroundColor: palette.surfaceElevated },
+                    isFavorite && { backgroundColor: palette.primaryContainer },
+                  ]}
+                  onPress={handleToggleFavorite}
+                  accessibilityLabel={
+                    isFavorite ? 'Remove from favorites' : 'Add to favorites'
+                  }
+                >
+                  <MaterialIcons
+                    name={isFavorite ? 'star' : 'star-border'}
+                    size={24}
+                    color={isFavorite ? palette.noteBubbleAccent : palette.textMuted}
+                  />
+                </Pressable>
+              </View>
             ) : null}
           </View>
 
-          {note.type === 'regular' && note.content.body.trim() ? (
-            <ScrollView
-              style={[
-                styles.sheetPreviewBox,
-                { backgroundColor: palette.bg, borderColor: palette.borderSubtle },
-              ]}
-              nestedScrollEnabled
-            >
-              <MobileMarkdownView
-                body={note.content.body}
-                spans={note.content.spans}
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+            {liveNote.type === 'regular' && liveNote.content.body.trim() ? (
+              <ScrollView
+                style={[
+                  styles.sheetPreviewBox,
+                  { backgroundColor: palette.bg, borderColor: palette.outlineVariant },
+                ]}
+                nestedScrollEnabled
+              >
+                <MobilePlainTextView
+                  body={liveNote.content.body}
+                  spans={liveNote.content.spans}
+                  palette={palette}
+                  onCopyMono={(snippet) => {
+                    void Clipboard.setStringAsync(snippet);
+                    showSnackbar({ message: `Copied: ${snippet}` });
+                  }}
+                  onOpenLink={(href) => {
+                    onClose();
+                    onRequestOpenLink?.(href);
+                  }}
+                />
+              </ScrollView>
+            ) : null}
+
+            {onViewDetail ? (
+              <SheetAction
+                label="View note detail"
+                icon="visibility"
+                color={palette.noteBubbleAccent}
                 palette={palette}
-                onCopyCode={(snippet) => {
-                  void Clipboard.setStringAsync(snippet);
-                  showSnackbar({ message: `Copied: ${snippet}` });
-                }}
-                onOpenLink={(href) => {
-                  onClose();
-                  onRequestOpenLink?.(href);
-                }}
-              />
-            </ScrollView>
-          ) : null}
-
-          {onViewDetail ? (
-            <SheetAction
-              label="View note detail"
-              color={palette.noteBubbleAccent}
-              onPress={() => {
-                onClose();
-                onViewDetail(note);
-              }}
-            />
-          ) : null}
-
-          {isBin ? (
-            <>
-              <SheetAction
-                label="Restore"
-                color={palette.textPrimary}
-                onPress={() => {
-                  void restoreNotes([note.id]);
-                  onClose();
-                }}
-              />
-              <SheetAction
-                label="Delete permanently"
-                color={palette.destructiveAction}
                 onPress={() => {
                   onClose();
-                  onRequestPermDelete(note.id);
+                  onViewDetail(liveNote);
                 }}
               />
-            </>
-          ) : (
-            <>
-              {showPinAction ? (
+            ) : null}
+
+            {isBin ? (
+              <>
                 <SheetAction
-                  label={note.pinned ? 'Unpin note' : 'Pin note'}
+                  label="Restore"
+                  icon="restore-from-trash"
                   color={palette.textPrimary}
+                  palette={palette}
                   onPress={() => {
-                    void togglePin(note.id);
+                    void restoreNotes([liveNote.id]);
                     onClose();
                   }}
                 />
-              ) : null}
-              <SheetAction
-                label="Share"
-                color={palette.textPrimary}
-                onPress={() => void handleShare()}
-              />
-              <SheetAction
-                label="Copy"
-                color={palette.textPrimary}
-                onPress={() => void handleCopy()}
-              />
-              <SheetAction
-                label="Copy partially"
-                color={palette.textPrimary}
-                onPress={() => {
-                  onClose();
-                  onPartialCopy(note);
-                }}
-              />
-              <SheetAction
-                label="Edit"
-                color={palette.textPrimary}
-                onPress={() => {
-                  onClose();
-                  onEdit(note);
-                }}
-              />
-              <SheetAction
-                label="Delete"
-                color={palette.destructiveAction}
-                onPress={() => {
-                  onClose();
-                  onRequestSoftDelete([note.id]);
-                }}
-              />
-            </>
-          )}
+                <SheetAction
+                  label="Delete permanently"
+                  icon="delete-forever"
+                  color={palette.destructiveAction}
+                  palette={palette}
+                  onPress={() => {
+                    onClose();
+                    onRequestPermDelete(liveNote.id);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <SheetAction
+                  label="Share"
+                  icon="share"
+                  color={palette.textPrimary}
+                  palette={palette}
+                  onPress={() => void handleShare()}
+                />
+                <SheetAction
+                  label="Copy"
+                  icon="content-copy"
+                  color={palette.textPrimary}
+                  palette={palette}
+                  onPress={() => void handleCopy()}
+                />
+                <SheetAction
+                  label="Copy partially"
+                  icon="checklist"
+                  color={palette.textPrimary}
+                  palette={palette}
+                  onPress={() => {
+                    onClose();
+                    onPartialCopy(liveNote);
+                  }}
+                />
+                <SheetAction
+                  label="Edit"
+                  icon="edit"
+                  color={palette.textPrimary}
+                  palette={palette}
+                  onPress={() => {
+                    onClose();
+                    onEdit(liveNote);
+                  }}
+                />
+                <SheetAction
+                  label="Delete"
+                  icon="delete-outline"
+                  color={palette.destructiveAction}
+                  palette={palette}
+                  onPress={() => {
+                    onClose();
+                    onRequestSoftDelete([liveNote.id]);
+                  }}
+                />
+              </>
+            )}
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -219,21 +446,30 @@ export function MobileOptionsSheet({
 
 function SheetAction({
   label,
+  icon,
   color,
+  palette,
   onPress,
 }: {
   label: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
   color: string;
+  palette: MessyNotePalette;
   onPress: () => void;
 }) {
   return (
-    <Pressable style={styles.sheetAction} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.sheetAction,
+        pressed && { backgroundColor: palette.surfaceElevated },
+      ]}
+      onPress={onPress}
+    >
+      <MaterialIcons name={icon} size={20} color={color} />
       <Text style={[styles.sheetActionText, { color }]}>{label}</Text>
     </Pressable>
   );
 }
-
-type MobileEditorMode = 'write' | 'split' | 'preview';
 
 export function MobileNoteDetailModal({
   note,
@@ -256,12 +492,25 @@ export function MobileNoteDetailModal({
   return (
     <Modal animationType="slide" visible onRequestClose={onClose}>
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
-        <View style={[styles.dialogHeader, { backgroundColor: palette.headerBg }]}>
-          <Pressable onPress={onClose}>
-            <Text style={{ color: palette.textSecondary }}>Back</Text>
+        <View
+          style={[
+            styles.dialogHeader,
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+          ]}
+        >
+          <Pressable
+            style={[
+              styles.headerSecondaryPill,
+              { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+            ]}
+            onPress={onClose}
+          >
+            <Text style={[styles.headerActionText, { color: palette.textPrimary }]}>
+              Back
+            </Text>
           </Pressable>
           <Text
-            style={[styles.dialogTitle, { color: palette.textPrimary, maxWidth: '55%' }]}
+            style={[styles.dialogTitle, { color: palette.textPrimary }]}
             numberOfLines={1}
           >
             {note.title?.trim() || 'Note Detail'}
@@ -274,10 +523,10 @@ export function MobileNoteDetailModal({
                 onEdit(note);
               }}
             >
-              <Text style={{ color: palette.onAccent, fontWeight: '700' }}>Edit</Text>
+              <Text style={[styles.savePillText, { color: palette.onAccent }]}>Edit</Text>
             </Pressable>
           ) : (
-            <View style={{ width: 48 }} />
+            <View style={{ width: 64 }} />
           )}
         </View>
 
@@ -289,11 +538,11 @@ export function MobileNoteDetailModal({
           ) : null}
 
           {note.type === 'regular' ? (
-            <MobileMarkdownView
+            <MobilePlainTextView
               body={note.content.body}
               spans={note.content.spans}
               palette={palette}
-              onCopyCode={(snippet) => {
+              onCopyMono={(snippet) => {
                 void Clipboard.setStringAsync(snippet);
                 showSnackbar({ message: `Copied: ${snippet}` });
               }}
@@ -318,9 +567,34 @@ export function MobileNoteDetailModal({
                       {entry.field}
                     </Text>
                     <Text style={{ color: palette.textMuted }}>=</Text>
-                    <Text style={{ color: palette.textSecondary, flex: 1 }}>
-                      {entry.value}
-                    </Text>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.detailFieldValBtn,
+                        {
+                          backgroundColor: palette.surfaceElevated,
+                          borderColor: palette.outlineVariant,
+                        },
+                        pressed && { opacity: 0.72 },
+                      ]}
+                      onPress={() => {
+                        void Clipboard.setStringAsync(entry.value);
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        showSnackbar({ message: `Copied: ${entry.value}` });
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: palette.textSecondary,
+                          fontFamily: Platform.select({
+                            android: 'monospace',
+                            default: 'monospace',
+                          }),
+                          fontSize: 13.5,
+                        }}
+                      >
+                        {entry.value}
+                      </Text>
+                    </Pressable>
                   </View>
                 ))}
             </View>
@@ -338,17 +612,8 @@ export function MobileNoteDetailModal({
                       { backgroundColor: palette.surfaceCard, borderColor: palette.borderSubtle },
                     ]}
                   >
-                    <Text style={{ color: palette.noteBubbleAccent, fontWeight: '700' }}>
-                      {item.checked ? '☑' : '☐'}
-                    </Text>
                     <Text style={{ color: palette.textMuted }}>{idx + 1}.</Text>
-                    <Text
-                      style={{
-                        color: item.checked ? palette.textMuted : palette.textPrimary,
-                        textDecorationLine: item.checked ? 'line-through' : 'none',
-                        flex: 1,
-                      }}
-                    >
+                    <Text style={{ color: palette.textPrimary, flex: 1 }}>
                       {item.value}
                     </Text>
                   </View>
@@ -358,7 +623,7 @@ export function MobileNoteDetailModal({
 
           <Text style={[styles.detailTimestamp, { color: palette.textMuted }]}>
             Created {new Date(note.created_at).toLocaleString()}
-            {note.updated_at !== note.created_at
+            {isNoteEdited(note)
               ? ` · Updated ${new Date(note.updated_at).toLocaleString()}`
               : ''}
           </Text>
@@ -374,6 +639,7 @@ export function MobileRegularEditorModal({
   title,
   initialBody,
   initialSpans,
+  isEditingExisting = false,
   onCancel,
   onSave,
 }: {
@@ -382,14 +648,13 @@ export function MobileRegularEditorModal({
   title: string;
   initialBody: string;
   initialSpans: TextSpan[];
+  isEditingExisting?: boolean;
   onCancel: (draftBody: string, draftSpans: TextSpan[]) => void;
   onSave: (trimmedBody: string, trimmedSpans: TextSpan[]) => Promise<void>;
 }) {
-  const showSnackbar = useNotesStore((s) => s.showSnackbar);
   const [text, setText] = useState(initialBody);
   const [spans, setSpans] = useState<TextSpan[]>(initialSpans);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
-  const [viewMode, setViewMode] = useState<MobileEditorMode>('split');
 
   if (!visible) return null;
 
@@ -405,164 +670,118 @@ export function MobileRegularEditorModal({
     );
   };
 
-  const applyWrapOrPrefix = (prefix: string, suffix = '', fallback = 'text') => {
-    const start = selection.start;
-    const end = selection.end;
-    const selected = text.slice(start, end) || fallback;
-    const next = text.slice(0, start) + prefix + selected + suffix + text.slice(end);
-    updateBody(next);
-  };
-
-  const applyLinePrefix = (linePrefix: string) => {
-    const start = selection.start;
-    const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
-    const next = text.slice(0, lineStart) + linePrefix + text.slice(lineStart);
-    updateBody(next);
-  };
-
   return (
     <Modal animationType="slide" visible onRequestClose={() => onCancel(text, spans)}>
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
-        <View style={[styles.dialogHeader, { backgroundColor: palette.headerBg }]}>
-          <Pressable onPress={() => onCancel(text, spans)}>
-            <Text style={{ color: palette.textSecondary }}>Close</Text>
+        <View
+          style={[
+            styles.dialogHeader,
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+          ]}
+        >
+          <Pressable
+            style={[
+              styles.headerSecondaryPill,
+              { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+            ]}
+            onPress={() => onCancel(text, spans)}
+          >
+            <Text style={[styles.headerActionText, { color: palette.textPrimary }]}>
+              Close
+            </Text>
           </Pressable>
-          <Text style={[styles.dialogTitle, { color: palette.textPrimary }]}>{title}</Text>
+          <Text style={[styles.dialogTitle, { color: palette.textPrimary }]} numberOfLines={1}>
+            {title}
+          </Text>
           <View style={styles.dialogHeaderRight}>
-            {viewMode !== 'preview' ? (
-              <Pressable
-                style={[styles.monoBtn, { borderColor: palette.noteBubbleAccent }]}
-                onPress={handleApplyMono}
-              >
-                <Text style={{ color: palette.noteBubbleAccent, fontWeight: '600' }}>
-                  Mono
-                </Text>
-              </Pressable>
-            ) : null}
+            <Pressable
+              style={[
+                styles.monoBtn,
+                {
+                  backgroundColor: palette.surfaceElevated,
+                  borderColor: palette.noteBubbleAccent,
+                },
+              ]}
+              onPress={handleApplyMono}
+            >
+              <Text style={[styles.monoBtnText, { color: palette.noteBubbleAccent }]}>
+                Mono
+              </Text>
+            </Pressable>
             <Pressable
               style={[styles.savePill, { backgroundColor: palette.noteBubbleAccent }]}
               onPress={() => {
                 const trimmed = adjustSpansForTrim(text, spans);
                 if (!trimmed.text) return;
+                const initialAdjusted = adjustSpansForTrim(initialBody, initialSpans);
+                if (
+                  isEditingExisting &&
+                  trimmed.text === initialAdjusted.text &&
+                  JSON.stringify(trimmed.spans) === JSON.stringify(initialAdjusted.spans)
+                ) {
+                  onCancel(initialBody, initialSpans);
+                  return;
+                }
                 void onSave(trimmed.text, trimmed.spans);
               }}
             >
-              <Text style={{ color: palette.onAccent, fontWeight: '700' }}>Save</Text>
+              <Text style={[styles.savePillText, { color: palette.onAccent }]}>Save</Text>
             </Pressable>
           </View>
         </View>
 
-        <View
-          style={[
-            styles.editorSubBar,
-            { backgroundColor: palette.surfaceCard, borderBottomColor: palette.borderSubtle },
-          ]}
-        >
-          <View style={[styles.modeTabsRow, { borderColor: palette.borderSubtle, backgroundColor: palette.bg }]}>
-            {(['write', 'split', 'preview'] as const).map((mode) => {
-              const active = viewMode === mode;
-              return (
-                <Pressable
-                  key={mode}
-                  style={[
-                    styles.modeTab,
-                    active && { backgroundColor: palette.noteBubbleAccent },
-                  ]}
-                  onPress={() => setViewMode(mode)}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: '700',
-                      color: active ? palette.onAccent : palette.textSecondary,
-                    }}
-                  >
-                    {mode === 'write' ? 'Write' : mode === 'split' ? 'Split' : 'Preview'}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+        <TextInput
+          style={[styles.fullscreenInput, { color: palette.textPrimary }]}
+          multiline
+          autoFocus
+          textAlignVertical="top"
+          value={text}
+          onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+          onChangeText={updateBody}
+          placeholder="Write a note..."
+          placeholderTextColor={palette.textMuted}
+        />
 
-          {viewMode !== 'preview' ? (
+        {spans.length > 0 ? (
+          <View
+            style={[
+              styles.monoPreviewRow,
+              {
+                backgroundColor: palette.surfaceCard,
+                borderTopColor: palette.outlineVariant,
+              },
+            ]}
+          >
+            <Text style={[MessNoteTypography.labelMedium, { color: palette.textMuted }]}>
+              Mono:
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.formatToolbar}
+              contentContainerStyle={styles.monoPreviewChips}
             >
-              {[
-                { label: 'H1', onPress: () => applyLinePrefix('# ') },
-                { label: 'H2', onPress: () => applyLinePrefix('## ') },
-                { label: 'B', onPress: () => applyWrapOrPrefix('**', '**', 'bold') },
-                { label: 'I', onPress: () => applyWrapOrPrefix('*', '*', 'italic') },
-                { label: '`Code`', onPress: () => applyWrapOrPrefix('`', '`', 'code') },
-                { label: '• List', onPress: () => applyLinePrefix('- ') },
-                { label: '1. List', onPress: () => applyLinePrefix('1. ') },
-                { label: '> Quote', onPress: () => applyLinePrefix('> ') },
-              ].map((btn) => (
-                <Pressable
-                  key={btn.label}
+              {spans.map((s, idx) => (
+                <View
+                  key={idx}
                   style={[
-                    styles.formatChip,
-                    { backgroundColor: palette.bg, borderColor: palette.borderSubtle },
+                    styles.monoChipBadge,
+                    {
+                      backgroundColor: palette.monospaceBg,
+                      borderColor: palette.outlineVariant,
+                    },
                   ]}
-                  onPress={btn.onPress}
                 >
-                  <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: '600' }}>
-                    {btn.label}
+                  <Text
+                    style={{
+                      fontFamily: Platform.select({ android: 'monospace', default: 'monospace' }),
+                      fontSize: 12,
+                      color: palette.monospaceText,
+                    }}
+                  >
+                    {text.slice(s.start, s.end)}
                   </Text>
-                </Pressable>
+                </View>
               ))}
-            </ScrollView>
-          ) : null}
-        </View>
-
-        {viewMode !== 'preview' ? (
-          <TextInput
-            style={[
-              styles.fullscreenInput,
-              viewMode === 'split' && styles.splitInput,
-              { color: palette.textPrimary },
-            ]}
-            multiline
-            autoFocus
-            textAlignVertical="top"
-            value={text}
-            onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
-            onChangeText={updateBody}
-            placeholder="Write your note in Markdown (# Heading, **bold**, *italic*, - list, > quote, `code`)..."
-            placeholderTextColor={palette.textMuted}
-          />
-        ) : null}
-
-        {viewMode !== 'write' ? (
-          <View
-            style={[
-              styles.mobilePreviewContainer,
-              viewMode === 'split' && { borderTopWidth: 1, borderTopColor: palette.borderSubtle },
-            ]}
-          >
-            {viewMode === 'split' ? (
-              <Text style={[styles.previewPaneHeader, { color: palette.textMuted }]}>
-                LIVE PREVIEW
-              </Text>
-            ) : null}
-            <ScrollView contentContainerStyle={styles.previewPaneScroll}>
-              {text.trim() ? (
-                <MobileMarkdownView
-                  body={text}
-                  spans={spans}
-                  palette={palette}
-                  onCopyCode={(snippet) => {
-                    void Clipboard.setStringAsync(snippet);
-                    showSnackbar({ message: `Copied: ${snippet}` });
-                  }}
-                />
-              ) : (
-                <Text style={{ color: palette.textMuted, fontSize: 14 }}>
-                  Type Markdown above to preview formatting live.
-                </Text>
-              )}
             </ScrollView>
           </View>
         ) : null}
@@ -592,6 +811,8 @@ export function MobileFieldValueModal({
 
   const [title, setTitle] = useState(existingNote?.title ?? '');
   const [rows, setRows] = useState<FieldValueEntry[]>(initialRows);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const valueInputRefs = useRef<Record<string, TextInput | null>>({});
 
   if (!visible) return null;
 
@@ -599,6 +820,10 @@ export function MobileFieldValueModal({
   const lastRowBlank = !lastRow || (!lastRow.field.trim() && !lastRow.value.trim());
 
   const handleClose = () => {
+    if (confirmDiscard) {
+      setConfirmDiscard(false);
+      return;
+    }
     const dirty =
       title !== (existingNote?.title ?? '') ||
       JSON.stringify(rows) !== JSON.stringify(initialRows);
@@ -606,20 +831,30 @@ export function MobileFieldValueModal({
       onClose();
       return;
     }
-    Alert.alert('Discard changes?', 'Your unsaved changes will be lost.', [
-      { text: 'Keep editing', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: onClose },
-    ]);
+    setConfirmDiscard(true);
   };
 
   return (
     <Modal animationType="slide" visible onRequestClose={handleClose}>
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
-        <View style={[styles.dialogHeader, { backgroundColor: palette.headerBg }]}>
-          <Pressable onPress={handleClose}>
-            <Text style={{ color: palette.textSecondary }}>Cancel</Text>
+        <View
+          style={[
+            styles.dialogHeader,
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+          ]}
+        >
+          <Pressable
+            style={[
+              styles.headerSecondaryPill,
+              { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+            ]}
+            onPress={handleClose}
+          >
+            <Text style={[styles.headerActionText, { color: palette.textPrimary }]}>
+              Cancel
+            </Text>
           </Pressable>
-          <Text style={[styles.dialogTitle, { color: palette.textPrimary }]}>
+          <Text style={[styles.dialogTitle, { color: palette.textPrimary }]} numberOfLines={1}>
             {existingNote ? 'Edit Field-Value' : 'New Field-Value'}
           </Text>
           <Pressable
@@ -634,10 +869,29 @@ export function MobileFieldValueModal({
                   insertionOrder: idx,
                 }));
               if (valid.length === 0) return;
+              if (existingNote) {
+                const nextTitle = title.trim() || null;
+                const existingSorted = [...existingNote.content.fields].sort(
+                  (a, b) => a.insertionOrder - b.insertionOrder
+                );
+                const unchanged =
+                  nextTitle === (existingNote.title ?? null) &&
+                  valid.length === existingSorted.length &&
+                  valid.every(
+                    (r, i) =>
+                      r.id === existingSorted[i]?.id &&
+                      r.field === existingSorted[i]?.field &&
+                      r.value === existingSorted[i]?.value
+                  );
+                if (unchanged) {
+                  onClose();
+                  return;
+                }
+              }
               void onSave(title.trim() || null, valid);
             }}
           >
-            <Text style={{ color: palette.onAccent, fontWeight: '700' }}>Save</Text>
+            <Text style={[styles.savePillText, { color: palette.onAccent }]}>Save</Text>
           </Pressable>
         </View>
 
@@ -647,7 +901,7 @@ export function MobileFieldValueModal({
               styles.structuredInput,
               {
                 backgroundColor: palette.surfaceCard,
-                borderColor: palette.borderSubtle,
+                borderColor: palette.outlineVariant,
                 color: palette.textPrimary,
               },
             ]}
@@ -662,10 +916,10 @@ export function MobileFieldValueModal({
               key={row.id}
               style={[
                 styles.structuredCard,
-                { backgroundColor: palette.surfaceCard, borderColor: palette.borderSubtle },
+                { backgroundColor: palette.surfaceCard, borderColor: palette.outlineVariant },
               ]}
             >
-              <Text style={{ color: palette.textMuted }}>{idx + 1}.</Text>
+              <Text style={[styles.rowIdxText, { color: palette.textMuted }]}>{idx + 1}.</Text>
               <TextInput
                 style={[styles.flexInput, { color: palette.textPrimary }]}
                 placeholder="Field"
@@ -677,7 +931,23 @@ export function MobileFieldValueModal({
                   )
                 }
               />
+              <Pressable
+                style={[
+                  styles.fieldEqBtn,
+                  {
+                    backgroundColor: palette.surfaceElevated,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
+                onPress={() => valueInputRefs.current[row.id]?.focus()}
+                accessibilityLabel="Equals separator, jump to value"
+              >
+                <Text style={[styles.fieldEqText, { color: palette.textSecondary }]}>=</Text>
+              </Pressable>
               <TextInput
+                ref={(el) => {
+                  valueInputRefs.current[row.id] = el;
+                }}
                 style={[styles.flexInput, { color: palette.textPrimary }]}
                 placeholder="Value"
                 placeholderTextColor={palette.textMuted}
@@ -690,11 +960,13 @@ export function MobileFieldValueModal({
               />
               <Pressable
                 disabled={rows.length <= 1}
+                style={[styles.rowDeleteBtn, rows.length <= 1 && { opacity: 0.35 }]}
                 onPress={() =>
                   setRows((prev) => prev.filter((r) => r.id !== row.id))
                 }
+                accessibilityLabel="Remove row"
               >
-                <Text style={{ color: palette.destructiveAction }}>×</Text>
+                <MaterialIcons name="close" size={18} color={palette.destructiveAction} />
               </Pressable>
             </View>
           ))}
@@ -703,7 +975,11 @@ export function MobileFieldValueModal({
             disabled={lastRowBlank}
             style={[
               styles.addRowBtn,
-              { borderColor: palette.borderSubtle, opacity: lastRowBlank ? 0.4 : 1 },
+              {
+                backgroundColor: palette.surfaceElevated,
+                borderColor: palette.outlineVariant,
+                opacity: lastRowBlank ? 0.4 : 1,
+              },
             ]}
             onPress={() =>
               setRows((prev) => [
@@ -717,11 +993,28 @@ export function MobileFieldValueModal({
               ])
             }
           >
-            <Text style={{ color: palette.noteBubbleAccent, fontWeight: '600' }}>
+            <Text style={[styles.addRowBtnText, { color: palette.noteBubbleAccent }]}>
               + Add Row
             </Text>
           </Pressable>
         </ScrollView>
+
+        <MobileConfirmDialog
+          visible={confirmDiscard}
+          asOverlay
+          palette={palette}
+          title="Discard changes?"
+          message="Your unsaved changes will be lost."
+          cancelLabel="Keep editing"
+          confirmLabel="Discard"
+          destructive
+          icon="warning-amber"
+          onCancel={() => setConfirmDiscard(false)}
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            onClose();
+          }}
+        />
       </View>
     </Modal>
   );
@@ -748,10 +1041,15 @@ export function MobileListModal({
 
   const [title, setTitle] = useState(existingNote?.title ?? '');
   const [rows, setRows] = useState<ListRowEntry[]>(initialItems);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   if (!visible) return null;
 
   const handleClose = () => {
+    if (confirmDiscard) {
+      setConfirmDiscard(false);
+      return;
+    }
     const dirty =
       title !== (existingNote?.title ?? '') ||
       JSON.stringify(rows) !== JSON.stringify(initialItems);
@@ -759,20 +1057,30 @@ export function MobileListModal({
       onClose();
       return;
     }
-    Alert.alert('Discard changes?', 'Your unsaved changes will be lost.', [
-      { text: 'Keep editing', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: onClose },
-    ]);
+    setConfirmDiscard(true);
   };
 
   return (
     <Modal animationType="slide" visible onRequestClose={handleClose}>
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
-        <View style={[styles.dialogHeader, { backgroundColor: palette.headerBg }]}>
-          <Pressable onPress={handleClose}>
-            <Text style={{ color: palette.textSecondary }}>Cancel</Text>
+        <View
+          style={[
+            styles.dialogHeader,
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
+          ]}
+        >
+          <Pressable
+            style={[
+              styles.headerSecondaryPill,
+              { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+            ]}
+            onPress={handleClose}
+          >
+            <Text style={[styles.headerActionText, { color: palette.textPrimary }]}>
+              Cancel
+            </Text>
           </Pressable>
-          <Text style={[styles.dialogTitle, { color: palette.textPrimary }]}>
+          <Text style={[styles.dialogTitle, { color: palette.textPrimary }]} numberOfLines={1}>
             {existingNote ? 'Edit List' : 'New List'}
           </Text>
           <Pressable
@@ -786,10 +1094,28 @@ export function MobileListModal({
                   insertionOrder: idx,
                 }));
               if (valid.length === 0) return;
+              if (existingNote) {
+                const nextTitle = title.trim() || null;
+                const existingSorted = [...existingNote.content.items].sort(
+                  (a, b) => a.insertionOrder - b.insertionOrder
+                );
+                const unchanged =
+                  nextTitle === (existingNote.title ?? null) &&
+                  valid.length === existingSorted.length &&
+                  valid.every(
+                    (r, i) =>
+                      r.id === existingSorted[i]?.id &&
+                      r.value === existingSorted[i]?.value
+                  );
+                if (unchanged) {
+                  onClose();
+                  return;
+                }
+              }
               void onSave(title.trim() || null, valid);
             }}
           >
-            <Text style={{ color: palette.onAccent, fontWeight: '700' }}>Save</Text>
+            <Text style={[styles.savePillText, { color: palette.onAccent }]}>Save</Text>
           </Pressable>
         </View>
 
@@ -799,7 +1125,7 @@ export function MobileListModal({
               styles.structuredInput,
               {
                 backgroundColor: palette.surfaceCard,
-                borderColor: palette.borderSubtle,
+                borderColor: palette.outlineVariant,
                 color: palette.textPrimary,
               },
             ]}
@@ -814,10 +1140,10 @@ export function MobileListModal({
               key={row.id}
               style={[
                 styles.structuredCard,
-                { backgroundColor: palette.surfaceCard, borderColor: palette.borderSubtle },
+                { backgroundColor: palette.surfaceCard, borderColor: palette.outlineVariant },
               ]}
             >
-              <Text style={{ color: palette.textMuted }}>{idx + 1}.</Text>
+              <Text style={[styles.rowIdxText, { color: palette.textMuted }]}>{idx + 1}.</Text>
               <TextInput
                 style={[styles.flexInput, { color: palette.textPrimary }]}
                 placeholder="List item"
@@ -831,17 +1157,22 @@ export function MobileListModal({
               />
               <Pressable
                 disabled={rows.length <= 1}
+                style={[styles.rowDeleteBtn, rows.length <= 1 && { opacity: 0.35 }]}
                 onPress={() =>
                   setRows((prev) => prev.filter((r) => r.id !== row.id))
                 }
+                accessibilityLabel="Remove row"
               >
-                <Text style={{ color: palette.destructiveAction }}>×</Text>
+                <MaterialIcons name="close" size={18} color={palette.destructiveAction} />
               </Pressable>
             </View>
           ))}
 
           <Pressable
-            style={[styles.addRowBtn, { borderColor: palette.borderSubtle }]}
+            style={[
+              styles.addRowBtn,
+              { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+            ]}
             onPress={() =>
               setRows((prev) => [
                 ...prev,
@@ -854,11 +1185,28 @@ export function MobileListModal({
               ])
             }
           >
-            <Text style={{ color: palette.noteBubbleAccent, fontWeight: '600' }}>
+            <Text style={[styles.addRowBtnText, { color: palette.noteBubbleAccent }]}>
               + Add Row
             </Text>
           </Pressable>
         </ScrollView>
+
+        <MobileConfirmDialog
+          visible={confirmDiscard}
+          asOverlay
+          palette={palette}
+          title="Discard changes?"
+          message="Your unsaved changes will be lost."
+          cancelLabel="Keep editing"
+          confirmLabel="Discard"
+          destructive
+          icon="warning-amber"
+          onCancel={() => setConfirmDiscard(false)}
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            onClose();
+          }}
+        />
       </View>
     </Modal>
   );
@@ -894,20 +1242,37 @@ export function MobilePartialCopyModal({
         <Pressable
           style={[
             styles.partialDialog,
-            { backgroundColor: palette.surfaceCard, borderColor: palette.borderSubtle },
+            { backgroundColor: palette.surfaceCard, borderColor: palette.outlineVariant },
           ]}
           onPress={() => undefined}
         >
-          <View style={styles.sheetHeader}>
+          <View style={[styles.sheetHeader, { borderBottomColor: palette.outlineVariant }]}>
             <Text style={[styles.sheetTitle, { color: palette.textPrimary }]}>
               Copy partially
             </Text>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <Pressable onPress={() => setSelected(new Set(tokens.map((_, i) => i)))}>
-                <Text style={{ color: palette.noteBubbleAccent }}>All</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable
+                style={[styles.partialHeaderBtn, { backgroundColor: palette.primaryContainer }]}
+                onPress={() => setSelected(new Set(tokens.map((_, i) => i)))}
+              >
+                <Text style={{ color: palette.noteBubbleAccent, ...MessNoteTypography.labelLarge }}>
+                  All
+                </Text>
               </Pressable>
-              <Pressable onPress={() => setSelected(new Set())}>
-                <Text style={{ color: palette.textSecondary }}>Clear</Text>
+              <Pressable
+                style={[
+                  styles.partialHeaderBtn,
+                  {
+                    backgroundColor: palette.surfaceElevated,
+                    borderColor: palette.outlineVariant,
+                    borderWidth: 1,
+                  },
+                ]}
+                onPress={() => setSelected(new Set())}
+              >
+                <Text style={{ color: palette.textPrimary, ...MessNoteTypography.labelLarge }}>
+                  Clear
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -923,16 +1288,17 @@ export function MobilePartialCopyModal({
                     {
                       backgroundColor: active
                         ? palette.selectedItemBackground
-                        : palette.bg,
+                        : palette.surfaceElevated,
                       borderColor: active
                         ? palette.noteBubbleAccent
-                        : palette.borderSubtle,
+                        : palette.outlineVariant,
                     },
                   ]}
                   onPress={() => toggle(idx)}
                 >
                   <Text
                     style={{
+                      ...MessNoteTypography.bodyMedium,
                       color: active ? palette.noteBubbleAccent : palette.textPrimary,
                     }}
                   >
@@ -943,27 +1309,39 @@ export function MobilePartialCopyModal({
             })}
           </ScrollView>
 
-          <Pressable
-            disabled={selected.size === 0}
-            style={[
-              styles.savePill,
-              {
-                backgroundColor: palette.noteBubbleAccent,
-                alignSelf: 'flex-end',
-                opacity: selected.size === 0 ? 0.4 : 1,
-              },
-            ]}
-            onPress={() => {
-              const snippet = joinPartialCopyTokens(note, tokens, selected);
-              void Clipboard.setStringAsync(snippet);
-              showSnackbar({ message: 'Snippet copied to clipboard!' });
-              onClose();
-            }}
-          >
-            <Text style={{ color: palette.onAccent, fontWeight: '700' }}>
-              Copy Snippet
-            </Text>
-          </Pressable>
+          <View style={styles.partialFooter}>
+            <Pressable
+              style={[
+                styles.headerSecondaryPill,
+                { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+              ]}
+              onPress={onClose}
+            >
+              <Text style={[styles.headerActionText, { color: palette.textPrimary }]}>
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              disabled={selected.size === 0}
+              style={[
+                styles.savePill,
+                {
+                  backgroundColor: palette.noteBubbleAccent,
+                  opacity: selected.size === 0 ? 0.4 : 1,
+                },
+              ]}
+              onPress={() => {
+                const snippet = joinPartialCopyTokens(note, tokens, selected);
+                void Clipboard.setStringAsync(snippet);
+                showSnackbar({ message: 'Snippet copied to clipboard!' });
+                onClose();
+              }}
+            >
+              <Text style={[styles.savePillText, { color: palette.onAccent }]}>
+                Copy Snippet
+              </Text>
+            </Pressable>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
@@ -973,20 +1351,115 @@ export function MobilePartialCopyModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
+  },
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmOverlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 60,
+    elevation: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: MessNoteMetrics.dialogCornerRadius,
+    borderWidth: 1,
+    padding: 24,
+    gap: 14,
+  },
+  confirmIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmTitle: {
+    ...MessNoteTypography.titleLarge,
+  },
+  confirmMessage: {
+    ...MessNoteTypography.bodyMedium,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 6,
+  },
+  confirmSecondaryBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 42,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmPrimaryBtn: {
+    borderRadius: 999,
+    minHeight: 42,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmBtnText: {
+    ...MessNoteTypography.labelLarge,
+    fontWeight: '700',
+  },
+  bottomSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.68)',
+    justifyContent: 'flex-end',
+  },
+  bottomSheet: {
+    borderTopLeftRadius: MessNoteMetrics.dialogCornerRadius,
+    borderTopRightRadius: MessNoteMetrics.dialogCornerRadius,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    maxHeight: '85%',
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 999,
+    alignSelf: 'center',
+    marginBottom: 12,
+    opacity: 0.55,
+  },
+  sheetHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  starToggleBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sheet: {
     borderRadius: MessNoteMetrics.dialogCornerRadius,
     borderWidth: 1,
     padding: 20,
     gap: 4,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -994,121 +1467,128 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 12,
     borderBottomWidth: 1,
-    marginBottom: 4,
+    marginBottom: 6,
+    gap: 12,
   },
   sheetTitle: {
     ...MessNoteTypography.titleMedium,
     fontWeight: '700',
+    flex: 1,
   },
   sheetAction: {
-    paddingVertical: 12,
-    paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    minHeight: 46,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 14,
   },
   sheetActionText: {
-    fontSize: 15,
+    ...MessNoteTypography.bodyLarge,
     fontWeight: '500',
+    flex: 1,
   },
   fullscreen: {
     flex: 1,
   },
   dialogHeader: {
-    height: 60,
+    minHeight: MessNoteMetrics.headerRowHeight,
     paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
   },
   dialogTitle: {
-    fontSize: 16,
+    ...MessNoteTypography.titleMedium,
     fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   dialogHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
+  headerSecondaryPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 38,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerActionText: {
+    ...MessNoteTypography.labelLarge,
+  },
   monoBtn: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    minHeight: 38,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monoBtnText: {
+    ...MessNoteTypography.labelLarge,
   },
   savePill: {
     borderRadius: 999,
-    paddingHorizontal: 16,
+    minHeight: 38,
+    paddingHorizontal: 18,
     paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savePillText: {
+    ...MessNoteTypography.labelLarge,
+    fontWeight: '700',
   },
   fullscreenInput: {
     flex: 1,
     padding: 16,
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  splitInput: {
-    flex: 1,
-    minHeight: 160,
+    ...MessNoteTypography.bodyLarge,
   },
   sheetPreviewBox: {
     maxHeight: 200,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 12,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   detailScrollContent: {
     padding: 18,
     gap: 12,
   },
   detailHeading: {
-    fontSize: 22,
-    fontWeight: '700',
+    ...MessNoteTypography.titleLarge,
   },
   detailTimestamp: {
-    fontSize: 12,
+    ...MessNoteTypography.labelMedium,
     marginTop: 12,
   },
-  editorSubBar: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    gap: 8,
-  },
-  modeTabsRow: {
+  monoPreviewRow: {
     flexDirection: 'row',
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 999,
-    padding: 2,
-    gap: 2,
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
   },
-  modeTab: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  formatToolbar: {
+  monoPreviewChips: {
     flexDirection: 'row',
     gap: 6,
-    alignItems: 'center',
   },
-  formatChip: {
+  monoChipBadge: {
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  mobilePreviewContainer: {
-    flex: 1,
-  },
-  previewPaneHeader: {
-    fontSize: 11,
-    fontWeight: '700',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    letterSpacing: 0.5,
-  },
-  previewPaneScroll: {
-    padding: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   structuredBody: {
     padding: 16,
@@ -1116,37 +1596,91 @@ const styles = StyleSheet.create({
   },
   structuredInput: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    fontWeight: '600',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    minHeight: 50,
+    ...MessNoteTypography.titleMedium,
   },
   structuredCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    minHeight: 50,
+  },
+  rowIdxText: {
+    ...MessNoteTypography.bodyMedium,
+    minWidth: 20,
   },
   flexInput: {
     flex: 1,
-    fontSize: 15,
+    ...MessNoteTypography.bodyLarge,
+    paddingVertical: 4,
+  },
+  detailFieldValBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  fieldEqBtn: {
+    minWidth: 34,
+    minHeight: 34,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldEqText: {
+    ...MessNoteTypography.titleMedium,
+    fontWeight: '700',
+  },
+  rowDeleteBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addRowBtn: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingVertical: 11,
+    minHeight: 46,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addRowBtnText: {
+    ...MessNoteTypography.labelLarge,
   },
   partialDialog: {
-    borderRadius: 28,
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: MessNoteMetrics.dialogCornerRadius,
     borderWidth: 1,
-    padding: 18,
-    maxHeight: '75%',
-    gap: 12,
+    padding: 22,
+    maxHeight: '78%',
+    gap: 14,
+  },
+  partialHeaderBtn: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partialFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   chipsWrap: {
     flexDirection: 'row',
@@ -1156,7 +1690,7 @@ const styles = StyleSheet.create({
   chip: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
   },
 });

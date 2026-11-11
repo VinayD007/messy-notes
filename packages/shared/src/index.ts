@@ -4,6 +4,5 @@ export * from './sync/merge';
 export * from './sync/outbox';
 export * from './sync/supabaseRemote';
 export * from './utils/monospace';
-export * from './utils/markdown';
 export * from './utils/urls';
 export * from './theme/tokens';

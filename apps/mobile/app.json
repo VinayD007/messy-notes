@@ -23,6 +23,13 @@
         {
           "photosPermission": "Select photos to attach to your notes."
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow MessyNotes to access your photo library.",
+          "savePhotosPermission": "Allow MessyNotes to save note images to your gallery."
+        }
       ]
     ]
   }

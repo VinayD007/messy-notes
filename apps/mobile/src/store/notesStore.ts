@@ -5,6 +5,7 @@ import {
   canPinNote,
   countPinsInCategory,
   createNewNote,
+  hasNotePatchChanges,
   orderNotesNewestFirst,
   parseBackticksToSpans,
   toDomainNote,
@@ -324,10 +325,16 @@ export const useNotesStore = create<NotesState>((set, get) => {
     updateNote: async (noteId, patch) => {
       const existing = get().notes.find((n) => n.id === noteId);
       if (!existing) return;
+      if (!hasNotePatchChanges(existing, patch)) return;
 
       const updated = toDomainNote({
         ...existing,
-        title: patch.title !== undefined ? patch.title : existing.title,
+        title:
+          patch.title !== undefined
+            ? patch.title?.trim()
+              ? patch.title.trim()
+              : null
+            : existing.title,
         content: patch.content !== undefined ? patch.content : existing.content,
         photo_attachments:
           patch.photo_attachments !== undefined

@@ -1,5 +1,9 @@
 pluginManagement {
-    includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().toString())
+    def rnGradlePluginDir = new File(settingsDir, '../node_modules/@react-native/gradle-plugin')
+    if (!rnGradlePluginDir.exists()) {
+        rnGradlePluginDir = new File(settingsDir, '../../../node_modules/@react-native/gradle-plugin')
+    }
+    includeBuild(rnGradlePluginDir.canonicalPath)
 }
 plugins { id("com.facebook.react.settings") }
 
@@ -23,16 +27,21 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
 
 rootProject.name = 'MessyNotes'
 
+def resolveStaticModuleDir = { String pkg ->
+  def localDir = new File(settingsDir, "../node_modules/${pkg}")
+  localDir.exists() ? localDir : new File(settingsDir, "../../../node_modules/${pkg}")
+}
+
 dependencyResolutionManagement {
   versionCatalogs {
     reactAndroidLibs {
-      from(files(new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../gradle/libs.versions.toml")))
+      from(files(new File(resolveStaticModuleDir('react-native'), 'gradle/libs.versions.toml')))
     }
   }
 }
 
-apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle");
+apply from: new File(resolveStaticModuleDir('expo'), 'scripts/autolinking.gradle');
 useExpoModules()
 
 include ':app'
-includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile())
+includeBuild(resolveStaticModuleDir('@react-native/gradle-plugin'))

@@ -3,17 +3,19 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
+  isNoteEdited,
   MessNoteMetrics,
   MessNoteTypography,
+  NOTE_PHOTOS_BUCKET,
   type MessyNotePalette,
   type Note,
 } from '@messy-notes/shared';
 import { getLocalPhotoUri } from '../lib/photoStorage';
 import { supabase } from '../lib/supabase';
 import { useNotesStore } from '../store/notesStore';
-import { MobileMarkdownView } from './MobileMarkdownView';
+import { MobilePlainTextView } from './MobilePlainTextView';
 
 interface Props {
   note: Note;
@@ -38,7 +40,7 @@ export function MobileNoteBubble({
   onRequestOpenLink,
   onPreviewPhoto,
 }: Props) {
-  const { toggleSelectNote, toggleListItemChecked, showSnackbar } = useNotesStore();
+  const { toggleSelectNote, showSnackbar } = useNotesStore();
   const [resolvedUris, setResolvedUris] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function MobileNoteBubble({
           return [photo.id, localUri] as const;
         }
         const { data } = await supabase.storage
-          .from('note-photos')
+          .from(NOTE_PHOTOS_BUCKET)
           .createSignedUrl(photo.storagePath, 3600);
         return [photo.id, data?.signedUrl ?? ''] as const;
       })
@@ -86,16 +88,16 @@ export function MobileNoteBubble({
 
   return (
     <Pressable
-      style={[
+      style={({ pressed }) => [
         styles.bubble,
         {
           backgroundColor: isSelected
-            ? palette.primaryContainer
-            : palette.surfaceContainerLow,
-          borderColor: isSelected
-            ? palette.noteBubbleAccent
-            : palette.outlineVariant,
+            ? palette.selectedItemBackground
+            : palette.noteBubbleBackground,
+          borderColor: palette.noteBubbleAccent,
+          borderWidth: isSelected ? 1.5 : 1,
         },
+        pressed && { backgroundColor: palette.selectedItemBackground },
       ]}
       onPress={() => {
         if (selectionMode) {
@@ -109,14 +111,19 @@ export function MobileNoteBubble({
       <View style={styles.topRow}>
         <View style={styles.leftBadges}>
           {note.type !== 'regular' ? (
-            <Text
+            <View
               style={[
                 styles.kindPill,
-                { backgroundColor: palette.surfaceCard, color: palette.textSecondary },
+                {
+                  backgroundColor: palette.surfaceElevated,
+                  borderColor: palette.outlineVariant,
+                },
               ]}
             >
-              {note.type === 'field' ? 'Fields-Values' : 'List'}
-            </Text>
+              <Text style={[styles.kindPillText, { color: palette.textSecondary }]}>
+                {note.type === 'field' ? 'Fields-Values' : 'List'}
+              </Text>
+            </View>
           ) : null}
           {note.favorite ? (
             <MaterialIcons
@@ -162,12 +169,12 @@ export function MobileNoteBubble({
       ) : null}
 
       {note.type === 'regular' ? (
-        <View style={styles.markdownWrap}>
-          <MobileMarkdownView
+        <View style={styles.bodyWrap}>
+          <MobilePlainTextView
             body={note.content.body}
             spans={note.content.spans}
             palette={palette}
-            onCopyCode={(snippet) => void handleCopyMono(snippet)}
+            onCopyMono={(snippet) => void handleCopyMono(snippet)}
             onOpenLink={(href) => {
               if (selectionMode) {
                 toggleSelectNote(note.id);
@@ -192,9 +199,24 @@ export function MobileNoteBubble({
                   {entry.field}
                 </Text>
                 <Text style={{ color: palette.textMuted }}>=</Text>
-                <Text style={[styles.fieldVal, { color: palette.textSecondary }]}>
-                  {entry.value}
-                </Text>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.fieldValBtn,
+                    {
+                      backgroundColor: palette.surfaceElevated,
+                      borderColor: palette.outlineVariant,
+                    },
+                    pressed && { opacity: 0.72 },
+                  ]}
+                  onPress={() => void handleCopyMono(entry.value)}
+                  accessibilityLabel={`Copy ${entry.field} value`}
+                >
+                  <Text
+                    style={[styles.fieldValMono, { color: palette.textSecondary }]}
+                  >
+                    {entry.value}
+                  </Text>
+                </Pressable>
               </View>
             ))}
         </View>
@@ -205,43 +227,14 @@ export function MobileNoteBubble({
           {[...note.content.items]
             .sort((a, b) => a.insertionOrder - b.insertionOrder)
             .map((item, idx) => (
-              <Pressable
-                key={item.id}
-                style={styles.structuredRow}
-                onPress={() => {
-                  if (selectionMode) {
-                    toggleSelectNote(note.id);
-                  } else {
-                    void toggleListItemChecked(note.id, item.id);
-                  }
-                }}
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    { borderColor: palette.noteBubbleAccent },
-                    item.checked && { backgroundColor: palette.noteBubbleAccent },
-                  ]}
-                >
-                  {item.checked ? (
-                    <Text style={{ color: palette.onAccent, fontSize: 11, fontWeight: '700' }}>
-                      ✓
-                    </Text>
-                  ) : null}
-                </View>
+              <View key={item.id} style={styles.structuredRow}>
                 <Text style={[styles.rowNum, { color: palette.textMuted }]}>
                   {idx + 1}.
                 </Text>
-                <Text
-                  style={[
-                    styles.listText,
-                    { color: item.checked ? palette.textMuted : palette.textPrimary },
-                    item.checked && styles.strikethrough,
-                  ]}
-                >
+                <Text style={[styles.listText, { color: palette.textPrimary }]}>
                   {item.value}
                 </Text>
-              </Pressable>
+              </View>
             ))}
         </View>
       ) : null}
@@ -273,7 +266,7 @@ export function MobileNoteBubble({
           hour: '2-digit',
           minute: '2-digit',
         })}
-        {note.updated_at !== note.created_at ? ' · edited' : ''}
+        {isNoteEdited(note) ? ' · edited' : ''}
       </Text>
     </Pressable>
   );
@@ -285,11 +278,6 @@ const styles = StyleSheet.create({
     borderRadius: MessNoteMetrics.noteCardCornerRadius,
     padding: 16,
     gap: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
   },
   topRow: {
     flexDirection: 'row',
@@ -299,7 +287,9 @@ const styles = StyleSheet.create({
   leftBadges: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
+    flex: 1,
   },
   rightBadges: {
     flexDirection: 'row',
@@ -307,17 +297,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   kindPill: {
-    fontSize: 11,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderRadius: 999,
-    overflow: 'hidden',
+  },
+  kindPillText: {
+    ...MessNoteTypography.labelMedium,
   },
   star: {
     fontSize: 15,
   },
   pendingTag: {
-    fontSize: 11,
+    ...MessNoteTypography.labelMedium,
     color: '#FFD60A',
   },
   pinBadge: {
@@ -336,11 +328,11 @@ const styles = StyleSheet.create({
     ...MessNoteTypography.titleMedium,
     fontWeight: '700',
   },
-  markdownWrap: {
+  bodyWrap: {
     marginVertical: 2,
   },
   structuredList: {
-    gap: 6,
+    gap: 8,
   },
   structuredRow: {
     flexDirection: 'row',
@@ -348,30 +340,31 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   rowNum: {
-    fontSize: 13,
+    ...MessNoteTypography.bodyMedium,
+    minWidth: 20,
   },
   fieldKey: {
+    ...MessNoteTypography.bodyMedium,
     fontWeight: '600',
-    fontSize: 14,
+    flexShrink: 1,
   },
-  fieldVal: {
-    fontSize: 14,
+  fieldValBtn: {
     flex: 1,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minHeight: 32,
     justifyContent: 'center',
   },
-  listText: {
-    fontSize: 14,
-    flex: 1,
+  fieldValMono: {
+    fontSize: 13.5,
+    lineHeight: 19,
+    fontFamily: Platform.select({ android: 'monospace', default: 'monospace' }),
   },
-  strikethrough: {
-    textDecorationLine: 'line-through',
+  listText: {
+    ...MessNoteTypography.bodyMedium,
+    flex: 1,
   },
   photoRow: {
     flexDirection: 'row',
@@ -379,18 +372,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   photoThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
+    width: 68,
+    height: 68,
+    borderRadius: 12,
   },
   photoFallback: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
+    width: 68,
+    height: 68,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   timestamp: {
-    fontSize: 11,
+    ...MessNoteTypography.labelMedium,
+    fontWeight: '500',
   },
 });

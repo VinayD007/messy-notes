@@ -1,29 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { StatusBar } from 'expo-status-bar';
 import {
-  Alert,
+  Animated,
   BackHandler,
   FlatList,
   Image,
+  Keyboard,
   Linking,
   Modal,
   PanResponder,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  useColorScheme,
 } from 'react-native';
 import {
+  DEFAULT_WEB_APP_URL,
   DarkMessNoteColors,
   LightMessNoteColors,
   MAX_PHOTOS_PER_NOTE,
   MessNoteMetrics,
   MessNoteTypography,
+  applyPinOrdering,
   buildGroupedText,
   getDisplayedBinNotes,
   getDisplayedFavorites,
@@ -35,12 +42,14 @@ import {
   type TextSpan,
 } from '@messy-notes/shared';
 import {
+  MobileConfirmDialog,
   MobileFieldValueModal,
   MobileListModal,
   MobileNoteDetailModal,
   MobileOptionsSheet,
   MobilePartialCopyModal,
   MobileRegularEditorModal,
+  type MobileConfirmConfig,
 } from '../components/MobileDialogs';
 import { MobileNoteBubble } from '../components/MobileNoteBubble';
 import { getPreference, setPreference } from '../lib/mmkvStorage';
@@ -48,6 +57,7 @@ import { useAuthStore } from '../store/authStore';
 import { useNotesStore } from '../store/notesStore';
 
 const FILTER_ORDER: NoteFilter[] = ['all', 'regular', 'field', 'list'];
+const DRAWER_WIDTH = 288;
 const FILTER_LABELS: Record<NoteFilter, string> = {
   all: 'All',
   regular: 'Notes',
@@ -56,7 +66,6 @@ const FILTER_LABELS: Record<NoteFilter, string> = {
 };
 
 export function FeedScreen() {
-  const systemScheme = useColorScheme();
   const { user, signOut } = useAuthStore();
   const {
     notes,
@@ -107,8 +116,35 @@ export function FeedScreen() {
   const [newListOpen, setNewListOpen] = useState(false);
   const [partialCopyNote, setPartialCopyNote] = useState<Note | null>(null);
   const [previewPhotoUri, setPreviewPhotoUri] = useState<string | null>(null);
+  const [downloadingPhoto, setDownloadingPhoto] = useState(false);
+  const [photoSavedFeedback, setPhotoSavedFeedback] = useState<string | null>(null);
+  const [composerHeight, setComposerHeight] = useState(74);
+  const [confirmDialog, setConfirmDialog] = useState<MobileConfirmConfig | null>(null);
 
   const listRef = useRef<FlatList<Note> | null>(null);
+  const composerInputRef = useRef<TextInput | null>(null);
+  const drawerTranslateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
+  const liveAppUrl = process.env.EXPO_PUBLIC_WEB_APP_URL?.trim() || DEFAULT_WEB_APP_URL;
+
+  const closeDrawerSmoothly = useCallback(() => {
+    Animated.timing(drawerTranslateX, {
+      toValue: -DRAWER_WIDTH,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setDrawerOpen(false);
+    });
+  }, [drawerTranslateX]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    drawerTranslateX.setValue(-DRAWER_WIDTH);
+    Animated.timing(drawerTranslateX, {
+      toValue: 0,
+      duration: 210,
+      useNativeDriver: true,
+    }).start();
+  }, [drawerOpen, drawerTranslateX]);
 
   useEffect(() => {
     const val = getPreference('theme_mode');
@@ -117,8 +153,17 @@ export function FeedScreen() {
     }
   }, []);
 
-  const isDark =
-    themeOverride !== null ? themeOverride === 'dark' : systemScheme !== 'light';
+  useEffect(() => {
+    const hidePlusMenu = () => setPlusMenuOpen(false);
+    const didShowSub = Keyboard.addListener('keyboardDidShow', hidePlusMenu);
+    const willShowSub = Keyboard.addListener('keyboardWillShow', hidePlusMenu);
+    return () => {
+      didShowSub.remove();
+      willShowSub.remove();
+    };
+  }, []);
+
+  const isDark = themeOverride !== null ? themeOverride === 'dark' : true;
   const palette = isDark ? DarkMessNoteColors : LightMessNoteColors;
 
   const toggleTheme = () => {
@@ -132,8 +177,12 @@ export function FeedScreen() {
   // Section 7.1 Back navigation priority order.
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (confirmDialog) {
+        setConfirmDialog(null);
+        return true;
+      }
       if (drawerOpen) {
-        setDrawerOpen(false);
+        closeDrawerSmoothly();
         return true;
       }
       if (composerExpanded) {
@@ -184,12 +233,64 @@ export function FeedScreen() {
     newListOpen,
     partialCopyNote,
     previewPhotoUri,
+    confirmDialog,
     activeView,
+    closeDrawerSmoothly,
     clearSelection,
     setSearchQueryForActiveView,
     setSearchActive,
     setActiveView,
   ]);
+
+  const drawerPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => drawerOpen,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: (_evt, gesture) => {
+          if (!drawerOpen) return false;
+          return (
+            gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
+          );
+        },
+        onMoveShouldSetPanResponderCapture: (_evt, gesture) => {
+          if (!drawerOpen) return false;
+          return (
+            gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
+          );
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (_evt, gesture) => {
+          const clamped = Math.min(0, Math.max(-DRAWER_WIDTH, gesture.dx));
+          drawerTranslateX.setValue(clamped);
+        },
+        onPanResponderRelease: (_evt, gesture) => {
+          if (gesture.dx < -48 || gesture.vx < -0.35) {
+            closeDrawerSmoothly();
+          } else {
+            Animated.spring(drawerTranslateX, {
+              toValue: 0,
+              useNativeDriver: true,
+              bounciness: 0,
+            }).start();
+          }
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(drawerTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+          }).start();
+        },
+      }),
+    [drawerOpen, closeDrawerSmoothly, drawerTranslateX]
+  );
+
+  const drawerBackdropOpacity = drawerTranslateX.interpolate({
+    inputRange: [-DRAWER_WIDTH, 0],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   // Section 4.5 & 6.3 Horizontal swipe navigation across filters on Home.
   const panResponder = useMemo(
@@ -227,10 +328,10 @@ export function FeedScreen() {
 
   const displayedNotes =
     activeView === 'favorites'
-      ? getDisplayedFavorites(notes, favSearchQuery)
+      ? applyPinOrdering(getDisplayedFavorites(notes, favSearchQuery))
       : activeView === 'bin'
         ? getDisplayedBinNotes(notes, binSearchQuery)
-        : getDisplayedNotes(notes, filterType, homeSearchQuery);
+        : applyPinOrdering(getDisplayedNotes(notes, filterType, homeSearchQuery));
 
   const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
   const binCount = notes.filter((n) => n.deleted_at !== null).length;
@@ -244,47 +345,50 @@ export function FeedScreen() {
         : 'Connected';
 
   const confirmSoftDelete = (ids: string[]) => {
-    Alert.alert(
-      ids.length === 1 ? 'Move 1 note to bin?' : `Move ${ids.length} notes to bin?`,
-      'Deleted notes can be restored from the Bin.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Move to bin',
-          style: 'destructive',
-          onPress: () => void softDeleteNotes(ids),
-        },
-      ]
-    );
+    setConfirmDialog({
+      title: ids.length === 1 ? 'Move 1 note to bin?' : `Move ${ids.length} notes to bin?`,
+      message: 'Deleted notes can be restored from the Bin.',
+      confirmLabel: 'Move to bin',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      icon: 'delete-outline',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void softDeleteNotes(ids);
+      },
+    });
   };
 
   const confirmPermanentDelete = (id: string) => {
-    Alert.alert(
-      'Delete note permanently?',
-      'This note and its photos cannot be recovered.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => void permanentlyDeleteNotes([id]),
-        },
-      ]
-    );
+    setConfirmDialog({
+      title: 'Delete note permanently?',
+      message: 'This note and its photos cannot be recovered.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      icon: 'delete-forever',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void permanentlyDeleteNotes([id]);
+      },
+    });
   };
 
   const confirmOpenLink = (url: string) => {
-    Alert.alert('Open link?', url, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Open',
-        onPress: () => {
-          void Linking.openURL(url).catch(() =>
-            showSnackbar({ message: 'No application found to open link' })
-          );
-        },
+    setConfirmDialog({
+      title: 'Open external link?',
+      message: url,
+      confirmLabel: 'Open',
+      cancelLabel: 'Cancel',
+      destructive: false,
+      icon: 'open-in-new',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void Linking.openURL(url).catch(() =>
+          showSnackbar({ message: 'No application found to open link' })
+        );
       },
-    ]);
+    });
   };
 
   const handlePickPhotos = async () => {
@@ -305,6 +409,65 @@ export function FeedScreen() {
       setDraftPhotos((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS_PER_NOTE));
     }
   };
+
+  const handleSavePreviewPhoto = useCallback(
+    async (uri: string) => {
+      if (downloadingPhoto) return;
+      setDownloadingPhoto(true);
+      let tempFileUri: string | null = null;
+
+      try {
+        const perm = await MediaLibrary.requestPermissionsAsync(true, ['photo']);
+        if (!perm.granted && perm.status !== 'granted') {
+          setPhotoSavedFeedback('Permission required');
+          showSnackbar({ message: 'Gallery permission required to save photos' });
+          return;
+        }
+
+        const cleanPath = uri.split('?')[0]?.split('#')[0] ?? '';
+        const extMatch = /\.([a-zA-Z0-9]{2,5})$/.exec(cleanPath);
+        const ext = extMatch?.[1]?.toLowerCase() ?? 'jpg';
+        const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+        let localUri = uri;
+
+        if (uri.startsWith('http://') || uri.startsWith('https://')) {
+          if (!baseDir) throw new Error('Cache directory unavailable');
+          tempFileUri = `${baseDir}messynote_${Date.now()}.${ext}`;
+          const downloaded = await FileSystem.downloadAsync(uri, tempFileUri);
+          if (downloaded.status >= 400) {
+            throw new Error(`HTTP ${downloaded.status}`);
+          }
+          localUri = downloaded.uri;
+        } else if (uri.startsWith('data:')) {
+          if (!baseDir) throw new Error('Cache directory unavailable');
+          const base64Payload = uri.split(',')[1] ?? '';
+          tempFileUri = `${baseDir}messynote_${Date.now()}.${ext}`;
+          await FileSystem.writeAsStringAsync(tempFileUri, base64Payload, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          localUri = tempFileUri;
+        } else if (!uri.startsWith('file://')) {
+          localUri = `file://${uri}`;
+        }
+
+        await MediaLibrary.saveToLibraryAsync(localUri);
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setPhotoSavedFeedback('Saved to gallery');
+        showSnackbar({ message: 'Photo saved to gallery' });
+        setTimeout(() => setPhotoSavedFeedback(null), 2200);
+      } catch {
+        setPhotoSavedFeedback('Could not save photo');
+        showSnackbar({ message: 'Failed to save photo' });
+        setTimeout(() => setPhotoSavedFeedback(null), 2200);
+      } finally {
+        if (tempFileUri) {
+          void FileSystem.deleteAsync(tempFileUri, { idempotent: true }).catch(() => void 0);
+        }
+        setDownloadingPhoto(false);
+      }
+    },
+    [downloadingPhoto, showSnackbar]
+  );
 
   const handleSendRegular = async () => {
     await createRegularNote({
@@ -341,21 +504,42 @@ export function FeedScreen() {
             ? 'No Lists yet'
             : 'No notes yet';
 
+  const emptySubtitle = activeQuery.trim()
+    ? 'Try a different keyword or clear the search filter.'
+    : activeView === 'favorites'
+      ? 'Star notes from the options sheet to keep them handy here.'
+      : activeView === 'bin'
+        ? 'Deleted notes appear here until restored or permanently removed.'
+        : 'Type below or tap + to add structured notes.';
+
+  const emptyIcon: keyof typeof MaterialIcons.glyphMap = activeQuery.trim()
+    ? 'search'
+    : activeView === 'favorites'
+      ? 'star-border'
+      : activeView === 'bin'
+        ? 'delete-outline'
+        : filterType === 'field'
+          ? 'table-chart'
+          : filterType === 'list'
+            ? 'format-list-bulleted'
+            : 'lightbulb-outline';
+
   return (
     <View style={[styles.container, { backgroundColor: palette.bg }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       {/* Header */}
       {selectionMode ? (
         <View
           style={[
             styles.header,
-            { backgroundColor: palette.surfaceContainer, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
           ]}
         >
           <View style={styles.headerLeft}>
             <Pressable style={styles.headerIconBtn} onPress={clearSelection}>
               <MaterialIcons name="close" size={22} color={palette.textPrimary} />
             </Pressable>
-            <Text style={[styles.headerTitle, { color: palette.textPrimary }]}>
+            <Text style={[styles.headerTitle, { color: palette.textPrimary }]} numberOfLines={1}>
               {selectedNotes.length} selected
             </Text>
           </View>
@@ -363,29 +547,42 @@ export function FeedScreen() {
             {selectedNotes.length === 1 ? (
               <>
                 <Pressable
-                  style={styles.headerTextBtn}
+                  style={[
+                    styles.headerTextPillBtn,
+                    { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+                  ]}
                   onPress={() => {
                     const target = selectedNotes[0]!;
                     clearSelection();
                     setEditingNote(target);
                   }}
                 >
-                  <Text style={{ color: palette.textPrimary }}>Edit</Text>
+                  <Text style={[styles.headerActionLabel, { color: palette.textPrimary }]}>
+                    Edit
+                  </Text>
                 </Pressable>
                 <Pressable
-                  style={styles.headerTextBtn}
+                  style={[
+                    styles.headerTextPillBtn,
+                    { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+                  ]}
                   onPress={() => {
                     const target = selectedNotes[0]!;
                     clearSelection();
                     setPartialCopyNote(target);
                   }}
                 >
-                  <Text style={{ color: palette.textPrimary }}>Partial</Text>
+                  <Text style={[styles.headerActionLabel, { color: palette.textPrimary }]}>
+                    Partial
+                  </Text>
                 </Pressable>
               </>
             ) : null}
             <Pressable
-              style={styles.headerTextBtn}
+              style={[
+                styles.headerTextPillBtn,
+                { backgroundColor: palette.surfaceElevated, borderColor: palette.outlineVariant },
+              ]}
               onPress={() => {
                 void Clipboard.setStringAsync(
                   selectedNotes.map(buildGroupedText).join('\n\n')
@@ -394,13 +591,23 @@ export function FeedScreen() {
                 showSnackbar({ message: 'Copied to clipboard!' });
               }}
             >
-              <Text style={{ color: palette.textPrimary }}>Copy</Text>
+              <Text style={[styles.headerActionLabel, { color: palette.textPrimary }]}>
+                Copy
+              </Text>
             </Pressable>
             <Pressable
-              style={styles.headerTextBtn}
+              style={[
+                styles.headerTextPillBtn,
+                {
+                  backgroundColor: 'rgba(255, 69, 58, 0.14)',
+                  borderColor: 'rgba(255, 69, 58, 0.35)',
+                },
+              ]}
               onPress={() => confirmSoftDelete(selectedNotes.map((n) => n.id))}
             >
-              <Text style={{ color: palette.destructiveAction }}>Delete</Text>
+              <Text style={[styles.headerActionLabel, { color: palette.destructiveAction }]}>
+                Delete
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -409,14 +616,14 @@ export function FeedScreen() {
           style={[
             styles.header,
             styles.searchHeaderContainer,
-            { backgroundColor: palette.surfaceContainer, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
           ]}
         >
           <View
             style={[
               styles.searchBarPill,
               {
-                backgroundColor: palette.surfaceContainerHigh,
+                backgroundColor: palette.surfaceElevated,
                 borderColor: palette.outlineVariant,
               },
             ]}
@@ -457,13 +664,13 @@ export function FeedScreen() {
             <View
               style={[
                 styles.searchCornerBadge,
-                { backgroundColor: palette.secondaryContainer },
+                { backgroundColor: palette.surfaceCard },
               ]}
             >
               <MaterialIcons
                 name="search"
                 size={20}
-                color={palette.onSecondaryContainer}
+                color={palette.textPrimary}
               />
             </View>
           </View>
@@ -472,7 +679,7 @@ export function FeedScreen() {
         <View
           style={[
             styles.header,
-            { backgroundColor: palette.surfaceContainer, borderBottomColor: palette.outlineVariant },
+            { backgroundColor: palette.headerBg, borderBottomColor: palette.outlineVariant },
           ]}
         >
           <View style={styles.headerLeft}>
@@ -489,15 +696,18 @@ export function FeedScreen() {
                 color={palette.textPrimary}
               />
             </Pressable>
-            <View>
-              <Text style={[styles.headerTitle, { color: palette.textPrimary }]}>
+            <View style={styles.headerTitleCol}>
+              <Text style={[styles.headerTitle, { color: palette.textPrimary }]} numberOfLines={1}>
                 {activeView === 'favorites'
                   ? 'Favorites'
                   : activeView === 'bin'
                     ? 'Bin'
                     : 'MessyNotes'}
               </Text>
-              <Text style={{ color: palette.noteBubbleAccent, ...MessNoteTypography.labelMedium }}>
+              <Text
+                style={{ color: palette.noteBubbleAccent, ...MessNoteTypography.labelMedium }}
+                numberOfLines={1}
+              >
                 {statusLabel}
               </Text>
             </View>
@@ -507,31 +717,53 @@ export function FeedScreen() {
             {activeView === 'bin' ? (
               <Pressable
                 disabled={binCount === 0}
-                style={styles.headerTextBtn}
+                style={[
+                  styles.headerTextPillBtn,
+                  {
+                    backgroundColor: 'rgba(255, 69, 58, 0.14)',
+                    borderColor: 'rgba(255, 69, 58, 0.35)',
+                    opacity: binCount === 0 ? 0.38 : 1,
+                  },
+                ]}
                 onPress={() =>
-                  Alert.alert(
-                    'Empty bin?',
-                    'All notes in the bin will be permanently deleted.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Empty bin',
-                        style: 'destructive',
-                        onPress: () => void emptyBin(),
-                      },
-                    ]
-                  )
+                  setConfirmDialog({
+                    title: 'Empty bin?',
+                    message: 'All notes in the bin will be permanently deleted.',
+                    confirmLabel: 'Empty bin',
+                    cancelLabel: 'Cancel',
+                    destructive: true,
+                    icon: 'delete-sweep',
+                    onConfirm: () => {
+                      setConfirmDialog(null);
+                      void emptyBin();
+                    },
+                  })
                 }
               >
-                <Text
-                  style={{
-                    color: palette.destructiveAction,
-                    fontWeight: '600',
-                    opacity: binCount === 0 ? 0.4 : 1,
-                  }}
-                >
+                <Text style={[styles.headerActionLabel, { color: palette.destructiveAction }]}>
                   Delete all
                 </Text>
+              </Pressable>
+            ) : null}
+
+            {activeView === 'home' ? (
+              <Pressable
+                style={[
+                  styles.headerSearchTrigger,
+                  {
+                    backgroundColor: palette.surfaceElevated,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
+                accessibilityLabel="Expand editor"
+                onPress={() => {
+                  composerInputRef.current?.blur();
+                  Keyboard.dismiss();
+                  setPlusMenuOpen(false);
+                  setComposerExpanded(true);
+                }}
+              >
+                <MaterialIcons name="open-in-full" size={20} color={palette.textPrimary} />
               </Pressable>
             ) : null}
 
@@ -539,7 +771,7 @@ export function FeedScreen() {
               style={[
                 styles.headerSearchTrigger,
                 {
-                  backgroundColor: palette.surfaceContainerHigh,
+                  backgroundColor: palette.surfaceElevated,
                   borderColor: palette.outlineVariant,
                 },
               ]}
@@ -556,10 +788,13 @@ export function FeedScreen() {
         </View>
       )}
 
-      {/* Home Filter Bar */}
+      {/* Home Filter Bar (Horizontal Scrolling Pills) */}
       {activeView === 'home' ? (
-        <View
-          style={[styles.filterRow, { borderBottomColor: palette.outlineVariant }]}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={[styles.filterBarScroll, { borderBottomColor: palette.outlineVariant }]}
+          contentContainerStyle={styles.filterRow}
         >
           {FILTER_ORDER.map((filter) => {
             const active = filterType === filter;
@@ -571,7 +806,7 @@ export function FeedScreen() {
                   {
                     backgroundColor: active
                       ? palette.noteBubbleAccent
-                      : palette.surfaceContainer,
+                      : palette.surfaceElevated,
                     borderColor: active
                       ? palette.noteBubbleAccent
                       : palette.outlineVariant,
@@ -585,7 +820,7 @@ export function FeedScreen() {
               >
                 <Text
                   style={{
-                    color: active ? palette.onAccent : palette.textSecondary,
+                    color: active ? palette.onAccent : palette.textPrimary,
                     ...MessNoteTypography.labelLarge,
                   }}
                 >
@@ -594,7 +829,7 @@ export function FeedScreen() {
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       ) : null}
 
       {error ? (
@@ -607,11 +842,12 @@ export function FeedScreen() {
       <View style={styles.feedWrap} {...panResponder.panHandlers}>
         <FlatList
           ref={listRef}
+          keyboardShouldPersistTaps="handled"
           data={displayedNotes}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.feedContent,
-            { paddingBottom: showComposer ? 148 : 24 },
+            { paddingBottom: showComposer ? 148 : 28 },
           ]}
           refreshControl={
             <RefreshControl
@@ -621,9 +857,25 @@ export function FeedScreen() {
             />
           }
           ListEmptyComponent={
-            <Text style={[styles.emptyText, { color: palette.textMuted }]}>
-              {emptyMessage}
-            </Text>
+            <View style={styles.emptyWrap}>
+              <View
+                style={[
+                  styles.emptyIconBadge,
+                  {
+                    backgroundColor: palette.surfaceCard,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
+              >
+                <MaterialIcons name={emptyIcon} size={30} color={palette.noteBubbleAccent} />
+              </View>
+              <Text style={[styles.emptyText, { color: palette.textPrimary }]}>
+                {emptyMessage}
+              </Text>
+              <Text style={[styles.emptySubtext, { color: palette.textSecondary }]}>
+                {emptySubtitle}
+              </Text>
+            </View>
           }
           renderItem={({ item }) => (
             <MobileNoteBubble
@@ -632,112 +884,34 @@ export function FeedScreen() {
               isSelected={selectedNoteIds.has(item.id)}
               isDirty={dirtyIds.has(item.id)}
               selectionMode={selectionMode}
-              showPinBadge={activeView === 'home' && filterType !== 'all'}
+              showPinBadge={activeView !== 'bin'}
               onOpenOptions={setOptionsNote}
               onRequestOpenLink={confirmOpenLink}
               onPreviewPhoto={setPreviewPhotoUri}
             />
           )}
         />
-
-        {showComposer ? (
-          <View style={styles.floatingOverlay} pointerEvents="box-none">
-            {plusMenuOpen ? (
-              <View style={styles.floatingMenuPills}>
-                <Pressable
-                  style={[
-                    styles.m3MenuPill,
-                    {
-                      backgroundColor: palette.surfaceContainerHigh,
-                      borderColor: palette.outlineVariant,
-                    },
-                  ]}
-                  onPress={() => {
-                    setPlusMenuOpen(false);
-                    setNewFieldOpen(true);
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: palette.onSecondaryContainer,
-                      ...MessNoteTypography.labelLarge,
-                    }}
-                  >
-                    Field-Value
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.m3MenuPill,
-                    {
-                      backgroundColor: palette.surfaceContainerHigh,
-                      borderColor: palette.outlineVariant,
-                    },
-                  ]}
-                  onPress={() => {
-                    setPlusMenuOpen(false);
-                    setNewListOpen(true);
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: palette.onSecondaryContainer,
-                      ...MessNoteTypography.labelLarge,
-                    }}
-                  >
-                    List
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            <View style={styles.floatingFabStack}>
-              <Pressable
-                style={[
-                  styles.tonalExpandFab,
-                  {
-                    backgroundColor: palette.secondaryContainer,
-                    borderColor: palette.outlineVariant,
-                  },
-                ]}
-                accessibilityLabel="Expand Markdown editor"
-                onPress={() => {
-                  setPlusMenuOpen(false);
-                  setComposerExpanded(true);
-                }}
-              >
-                <MaterialIcons
-                  name="open-in-full"
-                  size={20}
-                  color={palette.onSecondaryContainer}
-                />
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.fabPlus,
-                  { backgroundColor: palette.noteBubbleAccent },
-                ]}
-                accessibilityLabel={plusMenuOpen ? 'Close quick note menu' : 'Create structured note'}
-                onPress={() => setPlusMenuOpen((prev) => !prev)}
-              >
-                <MaterialIcons
-                  name={plusMenuOpen ? 'close' : 'add'}
-                  size={24}
-                  color={palette.onAccent}
-                />
-              </Pressable>
-            </View>
-          </View>
-        ) : null}
       </View>
+
+      {showComposer && plusMenuOpen ? (
+        <Pressable
+          style={styles.plusMenuScrim}
+          accessibilityLabel="Close quick note menu"
+          onPress={() => setPlusMenuOpen(false)}
+        />
+      ) : null}
 
       {/* Bottom Composer Bar (Clip + Send only) */}
       {showComposer ? (
         <View
+          onLayout={(e) => setComposerHeight(Math.round(e.nativeEvent.layout.height))}
           style={[
             styles.composerDock,
-            { backgroundColor: palette.surfaceContainer, borderTopColor: palette.outlineVariant },
+            {
+              zIndex: 22,
+              backgroundColor: palette.surfaceContainer,
+              borderTopColor: palette.outlineVariant,
+            },
           ]}
         >
           {draftPhotos.length > 0 ? (
@@ -760,24 +934,29 @@ export function FeedScreen() {
               style={[
                 styles.composerPill,
                 {
-                  backgroundColor: palette.surfaceContainerHigh,
+                  backgroundColor: palette.surfaceElevated,
                   borderColor: palette.outlineVariant,
                 },
               ]}
             >
               <TextInput
+                ref={composerInputRef}
                 style={[styles.composerInput, { color: palette.textPrimary }]}
                 multiline
                 value={draftText}
                 onChangeText={setDraftText}
-                placeholder="Write a note... (Markdown supported)"
+                onFocus={() => setPlusMenuOpen(false)}
+                placeholder="Write a note..."
                 placeholderTextColor={palette.textMuted}
               />
 
               <Pressable
                 style={styles.pillSmallBtn}
                 accessibilityLabel="Attach media"
-                onPress={() => void handlePickPhotos()}
+                onPress={() => {
+                  setPlusMenuOpen(false);
+                  void handlePickPhotos();
+                }}
               >
                 <MaterialIcons
                   name="attach-file"
@@ -785,27 +964,120 @@ export function FeedScreen() {
                   color={palette.textSecondary}
                 />
               </Pressable>
+            </View>
 
+            <Pressable
+              disabled={!draftText.trim() && draftPhotos.length === 0}
+              accessibilityLabel="Send note"
+              style={[
+                styles.sendCircle,
+                {
+                  backgroundColor: palette.noteBubbleAccent,
+                  opacity: draftText.trim() || draftPhotos.length > 0 ? 1 : 0.35,
+                },
+              ]}
+              onPress={() => {
+                setPlusMenuOpen(false);
+                void handleSendRegular();
+              }}
+            >
+              <MaterialIcons
+                name="arrow-forward"
+                size={22}
+                color={palette.onAccent}
+              />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Floating Structured Note '+' Menu (Field-Value & List only) */}
+      {showComposer ? (
+        <View
+          style={[styles.floatingOverlay, { bottom: composerHeight + 12 }]}
+          pointerEvents="box-none"
+        >
+          {plusMenuOpen ? (
+            <View style={styles.floatingMenuPills}>
               <Pressable
-                disabled={!draftText.trim() && draftPhotos.length === 0}
-                accessibilityLabel="Send note"
                 style={[
-                  styles.sendCircle,
+                  styles.m3MenuPill,
                   {
-                    backgroundColor: palette.noteBubbleAccent,
-                    opacity: draftText.trim() || draftPhotos.length > 0 ? 1 : 0.35,
+                    backgroundColor: palette.surfaceElevated,
+                    borderColor: palette.outlineVariant,
                   },
                 ]}
-                onPress={() => void handleSendRegular()}
+                onPress={() => {
+                  setPlusMenuOpen(false);
+                  setNewFieldOpen(true);
+                }}
               >
                 <MaterialIcons
-                  name="arrow-upward"
-                  size={20}
-                  color={palette.onAccent}
+                  name="table-chart"
+                  size={17}
+                  color={palette.noteBubbleAccent}
                 />
+                <Text
+                  style={{
+                    color: palette.textPrimary,
+                    ...MessNoteTypography.labelLarge,
+                  }}
+                >
+                  Field-Value
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.m3MenuPill,
+                  {
+                    backgroundColor: palette.surfaceElevated,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
+                onPress={() => {
+                  setPlusMenuOpen(false);
+                  setNewListOpen(true);
+                }}
+              >
+                <MaterialIcons
+                  name="format-list-bulleted"
+                  size={17}
+                  color={palette.noteBubbleAccent}
+                />
+                <Text
+                  style={{
+                    color: palette.textPrimary,
+                    ...MessNoteTypography.labelLarge,
+                  }}
+                >
+                  List
+                </Text>
               </Pressable>
             </View>
-          </View>
+          ) : null}
+
+          <Pressable
+            style={[
+              styles.fabPlus,
+              { backgroundColor: palette.noteBubbleAccent },
+            ]}
+            accessibilityLabel={plusMenuOpen ? 'Close quick note menu' : 'Create structured note'}
+            onPress={() => {
+              if (plusMenuOpen) {
+                setPlusMenuOpen(false);
+                return;
+              }
+              composerInputRef.current?.blur();
+              Keyboard.dismiss();
+              setPlusMenuOpen(true);
+            }}
+          >
+            <MaterialIcons
+              name={plusMenuOpen ? 'close' : 'add'}
+              size={26}
+              color={palette.onAccent}
+            />
+          </Pressable>
         </View>
       ) : null}
 
@@ -814,10 +1086,14 @@ export function FeedScreen() {
         <View
           style={[
             styles.snackbar,
-            { backgroundColor: palette.surfaceCard, borderColor: palette.borderSubtle },
+            {
+              bottom: showComposer ? 92 : 24,
+              backgroundColor: palette.surfaceElevated,
+              borderColor: palette.outlineVariant,
+            },
           ]}
         >
-          <Text style={{ color: palette.textPrimary, flex: 1 }}>
+          <Text style={{ ...MessNoteTypography.bodyMedium, color: palette.textPrimary, flex: 1 }}>
             {snackbar.message}
           </Text>
           {snackbar.undoLabel && snackbar.onUndo ? (
@@ -827,7 +1103,13 @@ export function FeedScreen() {
                 showSnackbar(null);
               }}
             >
-              <Text style={{ color: palette.noteBubbleAccent, fontWeight: '700' }}>
+              <Text
+                style={{
+                  color: palette.noteBubbleAccent,
+                  ...MessNoteTypography.labelLarge,
+                  fontWeight: '700',
+                }}
+              >
                 {snackbar.undoLabel}
               </Text>
             </Pressable>
@@ -836,22 +1118,25 @@ export function FeedScreen() {
       ) : null}
 
       {/* Navigation Drawer */}
-      <Modal
-        transparent
-        animationType="fade"
-        visible={drawerOpen}
-        onRequestClose={() => setDrawerOpen(false)}
-      >
-        <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)}>
-          <Pressable
+      {drawerOpen ? (
+        <View style={styles.drawerBackdrop} {...drawerPanResponder.panHandlers}>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFillObject,
+              styles.drawerScrim,
+              { opacity: drawerBackdropOpacity },
+            ]}
+          />
+          <Animated.View
             style={[
               styles.drawer,
               {
                 backgroundColor: palette.surfaceCard,
                 borderRightColor: palette.borderSubtle,
+                transform: [{ translateX: drawerTranslateX }],
               },
             ]}
-            onPress={() => undefined}
           >
             <View style={styles.drawerTop}>
               <Text style={[styles.drawerTitle, { color: palette.textPrimary }]}>
@@ -878,48 +1163,141 @@ export function FeedScreen() {
 
             <DrawerNavBtn
               label="All Notes"
+              icon="notes"
               active={activeView === 'home'}
               palette={palette}
               onPress={() => {
                 setActiveView('home');
-                setDrawerOpen(false);
+                closeDrawerSmoothly();
               }}
             />
             <DrawerNavBtn
               label="Favorites"
+              icon="star"
               active={activeView === 'favorites'}
               palette={palette}
               onPress={() => {
                 setActiveView('favorites');
-                setDrawerOpen(false);
+                closeDrawerSmoothly();
               }}
             />
             <DrawerNavBtn
               label="Bin"
+              icon="delete-outline"
               active={activeView === 'bin'}
               palette={palette}
               onPress={() => {
                 setActiveView('bin');
-                setDrawerOpen(false);
+                closeDrawerSmoothly();
               }}
             />
 
-            <View style={styles.drawerFooter}>
-              <Text
-                style={{ color: palette.textMuted, fontSize: 12, flex: 1 }}
-                numberOfLines={1}
+            <View style={styles.drawerFooterGroup}>
+              <View
+                style={[
+                  styles.drawerUrlCard,
+                  {
+                    backgroundColor: palette.surfaceContainerHigh,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
               >
-                {user.email}
-              </Text>
-              <Pressable onPress={() => void signOut()}>
-                <Text style={{ color: palette.destructiveAction, fontWeight: '600' }}>
-                  Sign out
+                <Text
+                  style={[styles.drawerUrlText, { color: palette.noteBubbleAccent }]}
+                  numberOfLines={1}
+                  ellipsizeMode="middle"
+                >
+                  {liveAppUrl}
                 </Text>
-              </Pressable>
+                <View style={styles.drawerUrlActions}>
+                  <Pressable
+                    style={[
+                      styles.drawerUrlBtn,
+                      {
+                        backgroundColor: palette.surfaceCard,
+                        borderColor: palette.outlineVariant,
+                      },
+                    ]}
+                    accessibilityLabel="Open web version"
+                    onPress={() => {
+                      void Linking.openURL(liveAppUrl).catch(() =>
+                        showSnackbar({ message: 'No application found to open URL' })
+                      );
+                    }}
+                  >
+                    <MaterialIcons
+                      name="open-in-new"
+                      size={16}
+                      color={palette.noteBubbleAccent}
+                    />
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.drawerUrlBtn,
+                      {
+                        backgroundColor: palette.surfaceCard,
+                        borderColor: palette.outlineVariant,
+                      },
+                    ]}
+                    accessibilityLabel="Copy app URL"
+                    onPress={() => {
+                      void Clipboard.setStringAsync(liveAppUrl);
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      showSnackbar({ message: 'App URL copied to clipboard!' });
+                    }}
+                  >
+                    <MaterialIcons
+                      name="content-copy"
+                      size={16}
+                      color={palette.textSecondary}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.drawerFooter,
+                  {
+                    backgroundColor: palette.surfaceContainerHigh,
+                    borderColor: palette.outlineVariant,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.drawerUserEmail, { color: palette.textSecondary }]}
+                  numberOfLines={1}
+                  ellipsizeMode="middle"
+                >
+                  {user.email}
+                </Text>
+                <Pressable
+                  style={[
+                    styles.drawerSignOutBtn,
+                    {
+                      backgroundColor: 'rgba(255, 69, 58, 0.14)',
+                      borderColor: 'rgba(255, 69, 58, 0.35)',
+                    },
+                  ]}
+                  accessibilityLabel="Sign out"
+                  onPress={() => void signOut()}
+                >
+                  <Text
+                    style={{
+                      color: palette.destructiveAction,
+                      ...MessNoteTypography.labelMedium,
+                      fontWeight: '700',
+                    }}
+                  >
+                    Sign out
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </Animated.View>
+          <Pressable style={{ flex: 1 }} onPress={closeDrawerSmoothly} />
+        </View>
+      ) : null}
 
       {/* Modals & Sheets */}
       <MobileOptionsSheet
@@ -980,6 +1358,7 @@ export function FeedScreen() {
           title="Edit Note"
           initialBody={editingNote.content.body}
           initialSpans={editingNote.content.spans}
+          isEditingExisting
           onCancel={() => setEditingNote(null)}
           onSave={async (trimmedBody, trimmedSpans) => {
             await updateNote(editingNote.id, {
@@ -1056,9 +1435,59 @@ export function FeedScreen() {
       <Modal
         transparent
         visible={previewPhotoUri !== null}
-        onRequestClose={() => setPreviewPhotoUri(null)}
+        onRequestClose={() => {
+          setPhotoSavedFeedback(null);
+          setPreviewPhotoUri(null);
+        }}
       >
-        <Pressable style={styles.photoBackdrop} onPress={() => setPreviewPhotoUri(null)}>
+        <Pressable
+          style={styles.photoBackdrop}
+          onPress={() => {
+            setPhotoSavedFeedback(null);
+            setPreviewPhotoUri(null);
+          }}
+        >
+          <Pressable
+            disabled={downloadingPhoto}
+            style={[
+              styles.photoDownloadBtn,
+              {
+                backgroundColor: palette.surfaceElevated,
+                borderColor: palette.outlineVariant,
+                opacity: downloadingPhoto ? 0.6 : 1,
+              },
+            ]}
+            accessibilityLabel="Download image"
+            onPress={(e) => {
+              e.stopPropagation();
+              if (previewPhotoUri) {
+                void handleSavePreviewPhoto(previewPhotoUri);
+              }
+            }}
+          >
+            <MaterialIcons
+              name={downloadingPhoto ? 'hourglass-top' : 'download'}
+              size={24}
+              color={palette.noteBubbleAccent}
+            />
+          </Pressable>
+
+          {photoSavedFeedback ? (
+            <View
+              style={[
+                styles.photoFeedbackPill,
+                {
+                  backgroundColor: palette.surfaceElevated,
+                  borderColor: palette.noteBubbleAccent,
+                },
+              ]}
+            >
+              <Text style={{ color: palette.textPrimary, ...MessNoteTypography.labelLarge }}>
+                {photoSavedFeedback}
+              </Text>
+            </View>
+          ) : null}
+
           {previewPhotoUri ? (
             <Image
               source={{ uri: previewPhotoUri }}
@@ -1068,17 +1497,36 @@ export function FeedScreen() {
           ) : null}
         </Pressable>
       </Modal>
+
+      <MobileConfirmDialog
+        visible={confirmDialog !== null}
+        palette={palette}
+        title={confirmDialog?.title ?? ''}
+        message={confirmDialog?.message ?? ''}
+        confirmLabel={confirmDialog?.confirmLabel ?? 'Confirm'}
+        cancelLabel={confirmDialog?.cancelLabel ?? 'Cancel'}
+        destructive={Boolean(confirmDialog?.destructive)}
+        icon={confirmDialog?.icon}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => {
+          if (confirmDialog) {
+            void confirmDialog.onConfirm();
+          }
+        }}
+      />
     </View>
   );
 }
 
 function DrawerNavBtn({
   label,
+  icon,
   active,
   palette,
   onPress,
 }: {
   label: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
   active: boolean;
   palette: typeof DarkMessNoteColors;
   onPress: () => void;
@@ -1087,15 +1535,20 @@ function DrawerNavBtn({
     <Pressable
       style={[
         styles.drawerBtn,
-        active && { backgroundColor: palette.selectedItemBackground },
+        active && { backgroundColor: palette.primaryContainer },
       ]}
       onPress={onPress}
     >
+      <MaterialIcons
+        name={icon}
+        size={20}
+        color={active ? palette.noteBubbleAccent : palette.textSecondary}
+      />
       <Text
         style={{
+          ...MessNoteTypography.bodyLarge,
           color: active ? palette.noteBubbleAccent : palette.textPrimary,
           fontWeight: active ? '700' : '500',
-          fontSize: 15,
         }}
       >
         {label}
@@ -1107,12 +1560,17 @@ function DrawerNavBtn({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    height: MessNoteMetrics.headerRowHeight,
+    minHeight: MessNoteMetrics.headerRowHeight,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  headerTitleCol: {
+    flexShrink: 1,
   },
   searchHeaderContainer: {
     paddingHorizontal: 14,
@@ -1120,38 +1578,34 @@ const styles = StyleSheet.create({
   },
   searchBarPill: {
     flex: 1,
-    height: 48,
+    minHeight: 48,
     borderWidth: 1,
     borderRadius: 999,
     paddingLeft: 4,
     paddingRight: 6,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
   },
   searchClearBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchCornerBadge: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  searchCornerBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerSearchTrigger: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1160,22 +1614,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   headerIconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTextBtn: {
-    paddingHorizontal: 10,
+  headerTextPillBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
     paddingVertical: 6,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerActionLabel: {
+    ...MessNoteTypography.labelMedium,
+    fontWeight: '700',
   },
   headerTitle: {
     ...MessNoteTypography.titleLarge,
@@ -1185,23 +1650,30 @@ const styles = StyleSheet.create({
     ...MessNoteTypography.bodyLarge,
     paddingHorizontal: 4,
   },
+  filterBarScroll: {
+    flexGrow: 0,
+    borderBottomWidth: 1,
+  },
   filterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderBottomWidth: 1,
   },
   filterPill: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 15,
-    paddingVertical: 7,
+    minHeight: 38,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   errorBanner: {
     paddingHorizontal: 14,
     paddingVertical: 6,
-    fontSize: 12,
+    ...MessNoteTypography.labelMedium,
   },
   feedWrap: {
     flex: 1,
@@ -1211,15 +1683,42 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 14,
   },
+  emptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    marginTop: 56,
+    gap: 10,
+  },
+  emptyIconBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
   emptyText: {
     textAlign: 'center',
-    marginTop: 56,
-    ...MessNoteTypography.bodyLarge,
+    ...MessNoteTypography.titleMedium,
+  },
+  emptySubtext: {
+    textAlign: 'center',
+    ...MessNoteTypography.bodyMedium,
+  },
+  plusMenuScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+    zIndex: 20,
+    elevation: 10,
   },
   floatingOverlay: {
     position: 'absolute',
-    right: 20,
-    bottom: 14,
+    right: 14,
+    bottom: 86,
+    zIndex: 30,
+    elevation: 16,
     alignItems: 'flex-end',
     gap: 10,
   },
@@ -1228,44 +1727,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   m3MenuPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     borderWidth: 1,
-    borderRadius: MessNoteMetrics.menuCornerRadius,
+    borderRadius: 999,
+    minHeight: 42,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  floatingFabStack: {
-    alignItems: 'center',
-    gap: 10,
-  },
-  tonalExpandFab: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
   },
   fabPlus: {
-    width: 48,
-    height: 48,
+    width: MessNoteMetrics.fabSize,
+    height: MessNoteMetrics.fabSize,
     borderRadius: MessNoteMetrics.fabCornerRadius,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
   },
   composerDock: {
     paddingHorizontal: 14,
@@ -1278,73 +1754,70 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   draftThumb: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     borderRadius: 12,
   },
   composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    gap: 10,
   },
   composerPill: {
     flex: 1,
+    minHeight: MessNoteMetrics.fabSize,
     borderWidth: 1,
     borderRadius: MessNoteMetrics.composerCornerRadius,
-    paddingLeft: 16,
+    paddingLeft: 18,
     paddingRight: 8,
-    paddingVertical: 6,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 6,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
   },
   composerInput: {
     flex: 1,
     ...MessNoteTypography.bodyLarge,
-    maxHeight: 104,
-    paddingVertical: 6,
+    maxHeight: 120,
+    paddingVertical: 7,
   },
   pillSmallBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
+  },
+  sendCircle: {
+    width: MessNoteMetrics.fabSize,
+    height: MessNoteMetrics.fabSize,
+    borderRadius: MessNoteMetrics.fabCornerRadius,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   snackbar: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 84,
+    left: 14,
+    right: 14,
+    bottom: 92,
+    zIndex: 24,
+    elevation: 12,
     borderWidth: 1,
-    borderRadius: 999,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
   },
   drawerBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 50,
+    elevation: 20,
     flexDirection: 'row',
+  },
+  drawerScrim: {
+    backgroundColor: 'rgba(0,0,0,0.68)',
   },
   drawer: {
     width: 288,
@@ -1354,7 +1827,6 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: MessNoteMetrics.dialogCornerRadius,
     padding: 18,
     gap: 8,
-    elevation: 8,
   },
   drawerTop: {
     flexDirection: 'row',
@@ -1366,31 +1838,108 @@ const styles = StyleSheet.create({
     ...MessNoteTypography.titleLarge,
   },
   themeBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   drawerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     borderRadius: 999,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 46,
   },
-  drawerFooter: {
+  drawerFooterGroup: {
     marginTop: 'auto',
+    gap: 10,
+  },
+  drawerUrlCard: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 48,
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingTop: 12,
+  },
+  drawerUrlText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  drawerUrlActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  drawerUrlBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerFooter: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minHeight: 48,
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  drawerUserEmail: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  drawerSignOutBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photoBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: 'rgba(0,0,0,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
+  },
+  photoDownloadBtn: {
+    position: 'absolute',
+    top: 44,
+    right: 18,
+    zIndex: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoFeedbackPill: {
+    position: 'absolute',
+    top: 102,
+    right: 18,
+    zIndex: 10,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
   },
   fullPhoto: {
     width: '100%',

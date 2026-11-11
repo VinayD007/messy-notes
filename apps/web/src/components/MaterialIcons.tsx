@@ -75,6 +75,14 @@ export function OpenInFullIcon(props: IconProps) {
   );
 }
 
+export function DownloadIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M19 9h-4V3H9v6H5l7 7 7-7ZM5 18v2h14v-2H5Z" />
+    </SvgBase>
+  );
+}
+
 export function AddIcon(props: IconProps) {
   return (
     <SvgBase {...props}>
@@ -111,6 +119,46 @@ export function PushPinIcon(props: IconProps) {
   return (
     <SvgBase {...props}>
       <path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3Z" />
+    </SvgBase>
+  );
+}
+
+export function PushPinOutlinedIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M14 4v5c0 1.12.37 2.16 1 3H9c.65-.86 1-1.9 1-3V4h4m3-2H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3V4h1c.55 0 1-.45 1-1s-.45-1-1-1Z" />
+    </SvgBase>
+  );
+}
+
+export function ArrowForwardIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="m12 4-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8Z" />
+    </SvgBase>
+  );
+}
+
+export function OpenInNewIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7ZM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7Z" />
+    </SvgBase>
+  );
+}
+
+export function ContentCopyIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1Zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16H8V7h11v14Z" />
+    </SvgBase>
+  );
+}
+
+export function StarBorderIcon(props: IconProps) {
+  return (
+    <SvgBase {...props}>
+      <path d="m22 9.24-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24ZM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4Z" />
     </SvgBase>
   );
 }

@@ -1,10 +1,12 @@
 import {
   MAX_PINS_PER_CATEGORY,
   MAX_PHOTOS_PER_NOTE,
+  NOTE_PHOTOS_BUCKET,
   adjustSpansForTrim,
   canPinNote,
   countPinsInCategory,
   createNewNote,
+  hasNotePatchChanges,
   orderNotesNewestFirst,
   parseBackticksToSpans,
   toDomainNote,
@@ -258,7 +260,7 @@ export const useNotesStore = create<NotesState>((set, get) => {
         return null;
       }
       const { data, error } = await supabase.storage
-        .from('note-photos')
+        .from(NOTE_PHOTOS_BUCKET)
         .createSignedUrl(storagePath, 3600);
       if (error || !data?.signedUrl) {
         return null;
@@ -330,10 +332,16 @@ export const useNotesStore = create<NotesState>((set, get) => {
     updateNote: async (noteId, patch) => {
       const existing = get().notes.find((n) => n.id === noteId);
       if (!existing) return;
+      if (!hasNotePatchChanges(existing, patch)) return;
 
       const updated = toDomainNote({
         ...existing,
-        title: patch.title !== undefined ? patch.title : existing.title,
+        title:
+          patch.title !== undefined
+            ? patch.title?.trim()
+              ? patch.title.trim()
+              : null
+            : existing.title,
         content: patch.content !== undefined ? patch.content : existing.content,
         photo_attachments:
           patch.photo_attachments !== undefined

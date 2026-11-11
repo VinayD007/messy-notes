@@ -4,6 +4,7 @@ import {
   adjustSpansForTextChange,
   adjustSpansForTrim,
   buildGroupedText,
+  canPinNote,
   joinPartialCopyTokens,
   toggleMonoSpan,
   tokenizeForPartialCopy,
@@ -18,12 +19,18 @@ import {
   type TextSpan,
 } from '@messy-notes/shared';
 import { useNotesStore } from '../store/notesStore';
-import { MarkdownRenderer } from './MarkdownRenderer';
+import {
+  PushPinIcon,
+  PushPinOutlinedIcon,
+  StarBorderIcon,
+  StarIcon,
+} from './MaterialIcons';
+import { PlainTextView } from './PlainTextView';
 
 export function SingleNoteOptionsModal({
   note,
   activeView,
-  filterType,
+  filterType: _filterType,
   onClose,
   onEdit,
   onPartialCopy,
@@ -41,22 +48,67 @@ export function SingleNoteOptionsModal({
   onRequestPermDelete: (noteId: string) => void;
   onRequestOpenLink?: (href: string) => void;
 }) {
-  const { toggleFavorite, togglePin, restoreNotes, showSnackbar } = useNotesStore();
-  const isBin = activeView === 'bin' || note.deleted_at !== null;
-  const canShowPin = !isBin && activeView === 'home' && filterType !== 'all';
+  const { notes, toggleFavorite, togglePin, restoreNotes, showSnackbar } = useNotesStore();
+  const liveNote = notes.find((n) => n.id === note.id) ?? note;
+  const [optimisticFavorite, setOptimisticFavorite] = useState<{
+    noteId: string;
+    favorite: boolean;
+  } | null>(null);
+  const [optimisticPin, setOptimisticPin] = useState<{
+    noteId: string;
+    pinned: boolean;
+  } | null>(null);
+  const isFavorite =
+    optimisticFavorite?.noteId === liveNote.id
+      ? optimisticFavorite.favorite
+      : liveNote.favorite;
+  const isPinned =
+    optimisticPin?.noteId === liveNote.id
+      ? optimisticPin.pinned
+      : liveNote.pinned;
+  const isBin = activeView === 'bin' || liveNote.deleted_at !== null;
+
+  const handleToggleFavorite = () => {
+    const nextFavorite = !isFavorite;
+    setOptimisticFavorite({ noteId: liveNote.id, favorite: nextFavorite });
+    void toggleFavorite(liveNote.id).finally(() => {
+      setOptimisticFavorite((current) =>
+        current?.noteId === liveNote.id && current.favorite === nextFavorite
+          ? null
+          : current
+      );
+    });
+  };
+
+  const handleTogglePin = () => {
+    const check = canPinNote(notes, { ...liveNote, pinned: isPinned });
+    if (!check.allowed) {
+      showSnackbar({ message: check.reason! });
+      return;
+    }
+    const nextPinned = !isPinned;
+    setOptimisticPin({ noteId: liveNote.id, pinned: nextPinned });
+    void togglePin(liveNote.id).finally(() => {
+      setOptimisticPin((current) =>
+        current?.noteId === liveNote.id && current.pinned === nextPinned
+          ? null
+          : current
+      );
+    });
+  };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(buildGroupedText(note));
+    await navigator.clipboard.writeText(buildGroupedText(liveNote));
     showSnackbar({ message: 'Copied to clipboard!' });
     onClose();
   };
 
   const handleShare = async () => {
-    const text = buildGroupedText(note);
+    const text = buildGroupedText(liveNote);
     if (navigator.share) {
       try {
         await navigator.share({
-          title: note.title ?? undefined,
+          title: liveNote.title ?? undefined,
           text,
         });
         onClose();
@@ -75,26 +127,48 @@ export function SingleNoteOptionsModal({
       <div className="options-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
           <span className="sheet-title">
-            {note.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
+            {liveNote.title?.trim() || (isBin ? 'Deleted Note' : 'Note Options')}
           </span>
           {!isBin && (
-            <button
-              type="button"
-              className={`star-toggle-btn ${note.favorite ? 'active' : ''}`}
-              title="Toggle favorite"
-              onClick={() => void toggleFavorite(note.id)}
-            >
-              {note.favorite ? '★' : '☆'}
-            </button>
+            <div className="sheet-header-actions">
+              <button
+                type="button"
+                className={`pin-toggle-btn ${isPinned ? 'active' : ''}`}
+                aria-label={isPinned ? 'Unpin note' : 'Pin note'}
+                title={isPinned ? 'Unpin note' : 'Pin note'}
+                aria-pressed={isPinned}
+                onClick={handleTogglePin}
+              >
+                {isPinned ? (
+                  <PushPinIcon size={21} />
+                ) : (
+                  <PushPinOutlinedIcon size={21} />
+                )}
+              </button>
+              <button
+                type="button"
+                className={`star-toggle-btn ${isFavorite ? 'active' : ''}`}
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                title="Toggle favorite"
+                aria-pressed={isFavorite}
+                onClick={handleToggleFavorite}
+              >
+                {isFavorite ? (
+                  <StarIcon size={22} />
+                ) : (
+                  <StarBorderIcon size={22} />
+                )}
+              </button>
+            </div>
           )}
         </div>
 
-        {note.type === 'regular' && note.content.body.trim() && (
+        {liveNote.type === 'regular' && liveNote.content.body.trim() && (
           <div className="options-note-preview">
-            <MarkdownRenderer
-              body={note.content.body}
-              spans={note.content.spans}
-              onCopyCode={(snippet) => {
+            <PlainTextView
+              body={liveNote.content.body}
+              spans={liveNote.content.spans}
+              onCopyMono={(snippet) => {
                 void navigator.clipboard.writeText(snippet);
                 showSnackbar({ message: `Copied: ${snippet}` });
               }}
@@ -112,7 +186,7 @@ export function SingleNoteOptionsModal({
               <button
                 type="button"
                 onClick={() => {
-                  void restoreNotes([note.id]);
+                  void restoreNotes([liveNote.id]);
                   onClose();
                 }}
               >
@@ -123,7 +197,7 @@ export function SingleNoteOptionsModal({
                 className="danger"
                 onClick={() => {
                   onClose();
-                  onRequestPermDelete(note.id);
+                  onRequestPermDelete(liveNote.id);
                 }}
               >
                 Delete permanently
@@ -131,17 +205,6 @@ export function SingleNoteOptionsModal({
             </>
           ) : (
             <>
-              {canShowPin && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void togglePin(note.id);
-                    onClose();
-                  }}
-                >
-                  {note.pinned ? 'Unpin note' : 'Pin note'}
-                </button>
-              )}
               <button type="button" onClick={() => void handleShare()}>
                 Share
               </button>
@@ -152,7 +215,7 @@ export function SingleNoteOptionsModal({
                 type="button"
                 onClick={() => {
                   onClose();
-                  onPartialCopy(note);
+                  onPartialCopy(liveNote);
                 }}
               >
                 Copy partially
@@ -161,7 +224,7 @@ export function SingleNoteOptionsModal({
                 type="button"
                 onClick={() => {
                   onClose();
-                  onEdit(note);
+                  onEdit(liveNote);
                 }}
               >
                 Edit
@@ -171,7 +234,7 @@ export function SingleNoteOptionsModal({
                 className="danger"
                 onClick={() => {
                   onClose();
-                  onRequestDelete([note.id]);
+                  onRequestDelete([liveNote.id]);
                 }}
               >
                 Delete
@@ -183,8 +246,6 @@ export function SingleNoteOptionsModal({
     </div>
   );
 }
-
-type EditorViewMode = 'write' | 'split' | 'preview';
 
 export function ExpandedRegularDialog({
   title,
@@ -206,53 +267,16 @@ export function ExpandedRegularDialog({
     newFiles: File[]
   ) => Promise<void>;
 }) {
-  const showSnackbar = useNotesStore((s) => s.showSnackbar);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [text, setText] = useState(initialBody);
   const [spans, setSpans] = useState<TextSpan[]>(initialSpans);
   const [keptPhotos, setKeptPhotos] = useState<PhotoAttachment[]>(existingPhotos);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
-  const [viewMode, setViewMode] = useState<EditorViewMode>(() =>
-    typeof window !== 'undefined' && window.innerWidth >= 720 ? 'split' : 'write'
-  );
 
   const handleTextChange = (nextText: string) => {
     setSpans((prev) => adjustSpansForTextChange(text, nextText, prev));
     setText(nextText);
-  };
-
-  const applyWrapOrPrefix = (
-    prefix: string,
-    suffix = '',
-    placeholder = 'text'
-  ) => {
-    const el = textareaRef.current;
-    const start = el?.selectionStart ?? text.length;
-    const end = el?.selectionEnd ?? text.length;
-    const selected = text.slice(start, end) || placeholder;
-    const nextText =
-      text.slice(0, start) + prefix + selected + suffix + text.slice(end);
-    handleTextChange(nextText);
-    requestAnimationFrame(() => {
-      el?.focus();
-      const cursorStart = start + prefix.length;
-      el?.setSelectionRange(cursorStart, cursorStart + selected.length);
-    });
-  };
-
-  const applyLinePrefix = (linePrefix: string) => {
-    const el = textareaRef.current;
-    const start = el?.selectionStart ?? text.length;
-    const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
-    const nextText =
-      text.slice(0, lineStart) + linePrefix + text.slice(lineStart);
-    handleTextChange(nextText);
-    requestAnimationFrame(() => {
-      el?.focus();
-      const nextPos = start + linePrefix.length;
-      el?.setSelectionRange(nextPos, nextPos);
-    });
   };
 
   const handleApplyMono = () => {
@@ -278,7 +302,7 @@ export function ExpandedRegularDialog({
 
   return (
     <div className="modal-backdrop">
-      <div className={`fullscreen-dialog ${viewMode === 'split' ? 'split-mode' : ''}`}>
+      <div className="fullscreen-dialog">
         <div className="dialog-header">
           <button
             type="button"
@@ -289,30 +313,14 @@ export function ExpandedRegularDialog({
           </button>
           <strong>{title}</strong>
           <div className="dialog-header-right">
-            <div className="editor-mode-tabs" role="tablist" aria-label="Editor view mode">
-              {(['write', 'split', 'preview'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  role="tab"
-                  aria-selected={viewMode === mode}
-                  className={`editor-mode-tab ${viewMode === mode ? 'active' : ''}`}
-                  onClick={() => setViewMode(mode)}
-                >
-                  {mode === 'write' ? 'Write' : mode === 'split' ? 'Split' : 'Preview'}
-                </button>
-              ))}
-            </div>
-            {viewMode !== 'preview' && (
-              <button
-                type="button"
-                className="btn-pill-accent-outline"
-                onClick={handleApplyMono}
-                title="Toggle monospace on selected text"
-              >
-                Mono
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn-pill-accent-outline"
+              onClick={handleApplyMono}
+              title="Toggle monospace on selected text"
+            >
+              Mono
+            </button>
             <button
               type="button"
               className="btn-accent"
@@ -324,68 +332,15 @@ export function ExpandedRegularDialog({
           </div>
         </div>
 
-        {viewMode !== 'preview' && (
-          <div className="md-format-bar">
-            <button type="button" onClick={() => applyLinePrefix('# ')}>
-              H1
-            </button>
-            <button type="button" onClick={() => applyLinePrefix('## ')}>
-              H2
-            </button>
-            <button type="button" onClick={() => applyWrapOrPrefix('**', '**', 'bold')}>
-              <strong>B</strong>
-            </button>
-            <button type="button" onClick={() => applyWrapOrPrefix('*', '*', 'italic')}>
-              <em>I</em>
-            </button>
-            <button type="button" onClick={() => applyWrapOrPrefix('`', '`', 'code')}>
-              {'`Code`'}
-            </button>
-            <button type="button" onClick={() => applyLinePrefix('- ')}>
-              • List
-            </button>
-            <button type="button" onClick={() => applyLinePrefix('1. ')}>
-              1. List
-            </button>
-            <button type="button" onClick={() => applyLinePrefix('> ')}>
-              “Quote”
-            </button>
-          </div>
-        )}
-
-        <div className={`editor-workspace mode-${viewMode}`}>
-          {viewMode !== 'preview' && (
-            <textarea
-              ref={textareaRef}
-              className="fullscreen-textarea"
-              value={text}
-              onChange={(e) => handleTextChange(e.target.value)}
-              placeholder="Write your note in Markdown (# Heading, **bold**, *italic*, - list, > quote, `code`)..."
-              autoFocus
-            />
-          )}
-
-          {viewMode !== 'write' && (
-            <div className="md-preview-pane">
-              {viewMode === 'split' && (
-                <div className="md-preview-pane-label">Live Preview</div>
-              )}
-              {text.trim() ? (
-                <MarkdownRenderer
-                  body={text}
-                  spans={spans}
-                  onCopyCode={(snippet) => {
-                    void navigator.clipboard.writeText(snippet);
-                    showSnackbar({ message: `Copied: ${snippet}` });
-                  }}
-                />
-              ) : (
-                <p className="md-empty-hint">
-                  Start typing Markdown on the left to see the live formatted preview.
-                </p>
-              )}
-            </div>
-          )}
+        <div className="editor-workspace">
+          <textarea
+            ref={textareaRef}
+            className="fullscreen-textarea"
+            value={text}
+            onChange={(e) => handleTextChange(e.target.value)}
+            placeholder="Write a note..."
+            autoFocus
+          />
         </div>
 
         {spans.length > 0 && (
@@ -542,6 +497,18 @@ export function FieldValueDialog({
                 }
                 placeholder="Field"
               />
+              <button
+                type="button"
+                className="field-eq-btn"
+                title="Equals"
+                tabIndex={-1}
+                onClick={(e) => {
+                  const nextInput = e.currentTarget.nextElementSibling as HTMLInputElement | null;
+                  nextInput?.focus();
+                }}
+              >
+                =
+              </button>
               <input
                 type="text"
                 value={row.value}
@@ -696,17 +663,6 @@ export function ListDialog({
 
           {rows.map((row, idx) => (
             <div key={row.id} className="structured-row-card">
-              <input
-                type="checkbox"
-                checked={row.checked}
-                onChange={() =>
-                  setRows((prev) =>
-                    prev.map((r) =>
-                      r.id === row.id ? { ...r, checked: !r.checked } : r
-                    )
-                  )
-                }
-              />
               <span className="row-num">{idx + 1}.</span>
               <input
                 type="text"

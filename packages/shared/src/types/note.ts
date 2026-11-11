@@ -102,6 +102,57 @@ export function compareIsoTimestamps(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
+/**
+ * Compares `created_at` and `updated_at` using parsed epoch milliseconds so
+ * equivalent ISO representations (`Z` vs `+00:00`) never display a false "edited" label.
+ */
+export function isNoteEdited(
+  note: Pick<Note, 'created_at' | 'updated_at'>
+): boolean {
+  const createdMs = Date.parse(note.created_at);
+  const updatedMs = Date.parse(note.updated_at);
+  if (!Number.isNaN(createdMs) && !Number.isNaN(updatedMs)) {
+    return Math.abs(updatedMs - createdMs) >= 1;
+  }
+  return note.updated_at !== note.created_at;
+}
+
+/**
+ * Determines whether an edit patch actually mutates a note's title, content,
+ * or photo attachments, preventing unchanged closes/saves from bumping `updated_at`.
+ */
+export function hasNotePatchChanges(
+  existing: Note,
+  patch: {
+    title?: string | null;
+    content?: NoteContent;
+    photo_attachments?: PhotoAttachment[];
+  }
+): boolean {
+  if (patch.title !== undefined) {
+    const nextTitle = patch.title?.trim() ? patch.title.trim() : null;
+    const prevTitle = existing.title?.trim() ? existing.title.trim() : null;
+    if (nextTitle !== prevTitle) return true;
+  }
+
+  if (
+    patch.content !== undefined &&
+    JSON.stringify(patch.content) !== JSON.stringify(existing.content)
+  ) {
+    return true;
+  }
+
+  if (
+    patch.photo_attachments !== undefined &&
+    JSON.stringify(patch.photo_attachments) !==
+      JSON.stringify(existing.photo_attachments)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function createDefaultContent(type: 'regular'): RegularNoteContent;
 export function createDefaultContent(type: 'field'): FieldNoteContent;
 export function createDefaultContent(type: 'list'): ListNoteContent;

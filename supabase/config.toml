@@ -17,8 +17,8 @@ enabled = true
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
-additional_redirect_urls = ["messynotes://auth/callback"]
+site_url = "https://messy-notes-one.vercel.app"
+additional_redirect_urls = ["https://messy-notes-one.vercel.app/", "http://localhost:5173", "messynotes://auth/callback"]
 jwt_expiry = 3600
 enable_signup = true
 

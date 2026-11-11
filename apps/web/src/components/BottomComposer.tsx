@@ -6,10 +6,9 @@ import {
 } from '@messy-notes/shared';
 import {
   AddIcon,
-  ArrowUpwardIcon,
+  ArrowForwardIcon,
   AttachFileIcon,
   CloseIcon,
-  OpenInFullIcon,
 } from './MaterialIcons';
 
 interface BottomComposerProps {
@@ -18,13 +17,13 @@ interface BottomComposerProps {
   draftPhotos: File[];
   onChangeDraft: (text: string, spans: TextSpan[]) => void;
   onChangePhotos: (files: File[]) => void;
+  onFocusInput?: () => void;
   onSend: () => Promise<void>;
 }
 
 interface FloatingComposerActionsProps {
   plusMenuOpen: boolean;
   onTogglePlusMenu: () => void;
-  onExpandFullScreen: () => void;
   onOpenNewFieldValue: () => void;
   onOpenNewList: () => void;
 }
@@ -32,7 +31,6 @@ interface FloatingComposerActionsProps {
 export function FloatingComposerActions({
   plusMenuOpen,
   onTogglePlusMenu,
-  onExpandFullScreen,
   onOpenNewFieldValue,
   onOpenNewList,
 }: FloatingComposerActionsProps) {
@@ -63,27 +61,24 @@ export function FloatingComposerActions({
         </div>
       )}
 
-      <div className="floating-fab-column">
-        <button
-          type="button"
-          className="m3-tonal-fab"
-          aria-label="Expand Markdown editor"
-          title="Expand Markdown editor"
-          onClick={onExpandFullScreen}
-        >
-          <OpenInFullIcon size={20} />
-        </button>
-
-        <button
-          type="button"
-          className={`m3-primary-fab ${plusMenuOpen ? 'open' : ''}`}
-          aria-label={plusMenuOpen ? 'Close quick note menu' : 'Create structured note'}
-          title="Create structured note"
-          onClick={onTogglePlusMenu}
-        >
-          <AddIcon size={24} />
-        </button>
-      </div>
+      <button
+        type="button"
+        className={`m3-primary-fab ${plusMenuOpen ? 'open' : ''}`}
+        aria-label={plusMenuOpen ? 'Close quick note menu' : 'Create structured note'}
+        title="Create structured note"
+        onClick={() => {
+          if (
+            !plusMenuOpen &&
+            typeof document !== 'undefined' &&
+            document.activeElement instanceof HTMLElement
+          ) {
+            document.activeElement.blur();
+          }
+          onTogglePlusMenu();
+        }}
+      >
+        <AddIcon size={24} />
+      </button>
     </div>
   );
 }
@@ -94,6 +89,7 @@ export function BottomComposer({
   draftPhotos,
   onChangeDraft,
   onChangePhotos,
+  onFocusInput,
   onSend,
 }: BottomComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -162,8 +158,9 @@ export function BottomComposer({
                 adjustSpansForTextChange(draftText, e.target.value, draftSpans)
               )
             }
+            onFocus={onFocusInput}
             onKeyDown={handleKeyDown}
-            placeholder="Write a note... (Markdown & `inline code` supported)"
+            placeholder="Write a note..."
           />
 
           <div className="composer-pill-actions">
@@ -180,7 +177,10 @@ export function BottomComposer({
               className="composer-clip-btn"
               aria-label={`Attach media (${draftPhotos.length}/${MAX_PHOTOS_PER_NOTE})`}
               title={`Attach media (${draftPhotos.length}/${MAX_PHOTOS_PER_NOTE})`}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                onFocusInput?.();
+                fileInputRef.current?.click();
+              }}
             >
               <AttachFileIcon size={20} />
             </button>
@@ -193,7 +193,7 @@ export function BottomComposer({
               title="Send note (Ctrl+Enter)"
               onClick={() => void handleSubmit()}
             >
-              <ArrowUpwardIcon size={20} />
+              <ArrowForwardIcon size={20} />
             </button>
           </div>
         </div>

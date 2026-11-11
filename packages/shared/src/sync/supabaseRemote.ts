@@ -3,6 +3,75 @@ import type { Database } from '../types/database';
 import type { Note, NoteRow } from '../types/note';
 import type { SyncRemoteAdapter } from './outbox';
 
+export const NOTE_PHOTOS_BUCKET = 'note-photos';
+export const DEFAULT_WEB_APP_URL = 'https://messy-notes-one.vercel.app/';
+
+const ALLOWED_PHOTO_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+];
+
+let bucketProvisionAttempted = false;
+
+function isBucketNotFoundError(error: { message?: string } | null | undefined): boolean {
+  const msg = error?.message ?? '';
+  return /bucket not found/i.test(msg);
+}
+
+/**
+ * Ensures the `note-photos` bucket exists when Supabase reports `Bucket not found`
+ * by attempting client storage creation and/or the idempotent `ensure_note_photos_bucket`
+ * SQL RPC before retrying upload.
+ */
+export async function uploadPhotoToNoteBucket(
+  supabase: SupabaseClient<Database>,
+  storagePath: string,
+  fileBody: Blob | ArrayBuffer | Uint8Array,
+  mimeType: string
+): Promise<void> {
+  const tryUpload = () =>
+    supabase.storage.from(NOTE_PHOTOS_BUCKET).upload(storagePath, fileBody, {
+      contentType: mimeType,
+      upsert: true,
+    });
+
+  const firstAttempt = await tryUpload();
+  if (!firstAttempt.error) {
+    return;
+  }
+
+  if (isBucketNotFoundError(firstAttempt.error)) {
+    if (!bucketProvisionAttempted) {
+      bucketProvisionAttempted = true;
+      await supabase.storage
+        .createBucket(NOTE_PHOTOS_BUCKET, {
+          public: false,
+          fileSizeLimit: 10 * 1024 * 1024,
+          allowedMimeTypes: ALLOWED_PHOTO_MIME_TYPES,
+        })
+        .catch(() => undefined);
+
+      await supabase.rpc('ensure_note_photos_bucket');
+    }
+
+    const retry = await tryUpload();
+    if (!retry.error) {
+      return;
+    }
+
+    throw new Error(
+      isBucketNotFoundError(retry.error)
+        ? 'Storage bucket "note-photos" not found in Supabase. Run supabase/migrations/20261110000002_storage_bucket_fix.sql in your Supabase SQL Editor.'
+        : `Photo upload failed: ${retry.error.message}`
+    );
+  }
+
+  throw new Error(`Photo upload failed: ${firstAttempt.error.message}`);
+}
+
 /**
  * Shared Supabase-backed remote adapter used by both Web and Mobile outbox
  * sync engines so conflict resolution, optimistic concurrency, and storage
@@ -28,6 +97,7 @@ export function createSupabaseNotesRemote(
             photo_attachments: note.photo_attachments,
             deleted_at: note.deleted_at,
             created_at: note.created_at,
+            updated_at: note.updated_at,
           },
           { onConflict: 'id' }
         )
@@ -122,7 +192,10 @@ export function createSupabaseNotesRemote(
         : [];
 
       if (storagePaths.length > 0) {
-        await supabase.storage.from('note-photos').remove(storagePaths);
+        await supabase.storage
+          .from(NOTE_PHOTOS_BUCKET)
+          .remove(storagePaths)
+          .catch(() => undefined);
       }
 
       const { error } = await supabase

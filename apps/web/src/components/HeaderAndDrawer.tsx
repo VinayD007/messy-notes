@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WEB_APP_URL,
   buildGroupedText,
   type Note,
   type NoteFilter,
@@ -8,9 +9,12 @@ import { useNotesStore } from '../store/notesStore';
 import {
   ArrowBackIcon,
   CloseIcon,
+  ContentCopyIcon,
   DarkModeIcon,
   LightModeIcon,
   MenuIcon,
+  OpenInFullIcon,
+  OpenInNewIcon,
   SearchIcon,
 } from './MaterialIcons';
 
@@ -24,6 +28,7 @@ const FILTER_LABELS: Record<NoteFilter, string> = {
 export function TopHeader({
   binCount,
   onOpenDrawer,
+  onExpandEditor,
   onEmptyBin,
   onEditSelected,
   onPartialCopySelected,
@@ -31,6 +36,7 @@ export function TopHeader({
 }: {
   binCount: number;
   onOpenDrawer: () => void;
+  onExpandEditor?: () => void;
   onEmptyBin: () => void;
   onEditSelected: (note: Note) => void;
   onPartialCopySelected: (note: Note) => void;
@@ -39,6 +45,7 @@ export function TopHeader({
   const {
     notes,
     activeView,
+    filterType,
     searchActive,
     selectedNoteIds,
     realtimeStatus,
@@ -166,7 +173,9 @@ export function TopHeader({
       ? 'Favorites'
       : activeView === 'bin'
         ? 'Bin'
-        : 'MessyNotes';
+        : filterType === 'all'
+          ? 'All Notes'
+          : FILTER_LABELS[filterType];
 
   return (
     <header className="top-header">
@@ -174,7 +183,7 @@ export function TopHeader({
         {activeView === 'home' ? (
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn mobile-menu-trigger"
             aria-label="Open menu"
             onClick={onOpenDrawer}
           >
@@ -220,6 +229,17 @@ export function TopHeader({
             Delete all
           </button>
         )}
+        {activeView === 'home' && onExpandEditor && (
+          <button
+            type="button"
+            className="icon-btn header-action-pill"
+            aria-label="Expand editor"
+            title="Expand editor"
+            onClick={onExpandEditor}
+          >
+            <OpenInFullIcon size={20} />
+          </button>
+        )}
         <button
           type="button"
           className="icon-btn header-search-trigger"
@@ -233,31 +253,47 @@ export function TopHeader({
   );
 }
 
-export function HomeFilterBar() {
-  const { filterType, setFilterType } = useNotesStore();
+export function HomeFilterBar({
+  vertical = false,
+  onAfterSelect,
+}: {
+  vertical?: boolean;
+  onAfterSelect?: () => void;
+} = {}) {
+  const { activeView, filterType, setActiveView, setFilterType } = useNotesStore();
   return (
-    <div className="filter-bar">
-      {(['all', 'regular', 'field', 'list'] as const).map((filter) => (
-        <button
-          key={filter}
-          type="button"
-          className={`filter-pill ${filterType === filter ? 'active' : ''}`}
-          onClick={() => setFilterType(filter)}
-        >
-          {FILTER_LABELS[filter]}
-        </button>
-      ))}
+    <div className={vertical ? 'filter-bar filter-bar-vertical' : 'filter-bar'}>
+      {(['all', 'regular', 'field', 'list'] as const).map((filter) => {
+        const isActive = activeView === 'home' && filterType === filter;
+        return (
+          <button
+            key={filter}
+            type="button"
+            aria-pressed={isActive}
+            className={`filter-pill ${isActive ? 'active' : ''}`}
+            onClick={() => {
+              setActiveView('home');
+              setFilterType(filter);
+              onAfterSelect?.();
+            }}
+          >
+            {FILTER_LABELS[filter]}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 export function NavigationDrawer({
   open,
+  persistent = false,
   themeMode,
   onToggleTheme,
   onClose,
 }: {
   open: boolean;
+  persistent?: boolean;
   themeMode: 'dark' | 'light';
   onToggleTheme: () => void;
   onClose: () => void;
@@ -267,71 +303,121 @@ export function NavigationDrawer({
     activeView,
     setActiveView,
     reset,
+    showSnackbar,
   } = useNotesStore();
 
-  if (!open) return null;
+  if (!persistent && !open) return null;
 
-  return (
-    <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="nav-drawer" onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-header">
-          <div className="drawer-brand">
-            <img src="/icon-192.png" alt="MessyNotes" className="drawer-brand-icon" />
-            <strong>MessyNotes</strong>
+  const liveAppUrl =
+    (import.meta.env.VITE_WEB_APP_URL as string | undefined)?.trim() ||
+    DEFAULT_WEB_APP_URL;
+
+  const handleCopyAppUrl = async () => {
+    await navigator.clipboard.writeText(liveAppUrl);
+    showSnackbar({ message: 'Copied app URL to clipboard' });
+  };
+
+  const handleNavigate = (view: 'home' | 'favorites' | 'bin') => {
+    setActiveView(view);
+    if (!persistent) {
+      onClose();
+    }
+  };
+
+  const drawerContent = (
+    <aside
+      className={persistent ? 'nav-drawer persistent-sidebar' : 'nav-drawer'}
+      aria-label={persistent ? 'Workspace sidebar' : 'Navigation drawer'}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="drawer-header">
+        <div className="drawer-brand">
+          <img src="/icon-192.png" alt="MessyNotes" className="drawer-brand-icon" />
+          <strong>MessyNotes</strong>
+        </div>
+        <button
+          type="button"
+          className="theme-switch-btn"
+          aria-label={`Switch to ${themeMode === 'dark' ? 'light' : 'dark'} theme`}
+          onClick={onToggleTheme}
+        >
+          {themeMode === 'dark' ? (
+            <LightModeIcon size={20} />
+          ) : (
+            <DarkModeIcon size={20} />
+          )}
+        </button>
+      </div>
+
+      <div className="drawer-section">
+        <span className="drawer-section-label">Navigation</span>
+        <button
+          type="button"
+          className={`drawer-item ${activeView === 'home' ? 'active' : ''}`}
+          onClick={() => handleNavigate('home')}
+        >
+          All Notes
+        </button>
+        <button
+          type="button"
+          className={`drawer-item ${activeView === 'favorites' ? 'active' : ''}`}
+          onClick={() => handleNavigate('favorites')}
+        >
+          Favorites
+        </button>
+        <button
+          type="button"
+          className={`drawer-item ${activeView === 'bin' ? 'active' : ''}`}
+          onClick={() => handleNavigate('bin')}
+        >
+          Bin
+        </button>
+      </div>
+
+      <div className="drawer-section">
+        <span className="drawer-section-label">Filter</span>
+        <HomeFilterBar
+          vertical
+          onAfterSelect={persistent ? undefined : onClose}
+        />
+      </div>
+
+      <div className="drawer-footer-group">
+        <div className="drawer-url-card drawer-pill-container">
+          <span className="drawer-url-text" title={liveAppUrl}>
+            {liveAppUrl}
+          </span>
+          <div className="drawer-url-actions">
+            <button
+              type="button"
+              className="drawer-url-btn"
+              aria-label="Open web app in new tab"
+              title="Open web app"
+              onClick={() =>
+                window.open(liveAppUrl, '_blank', 'noopener,noreferrer')
+              }
+            >
+              <OpenInNewIcon size={16} />
+            </button>
+            <button
+              type="button"
+              className="drawer-url-btn"
+              aria-label="Copy app URL"
+              title="Copy URL"
+              onClick={() => void handleCopyAppUrl()}
+            >
+              <ContentCopyIcon size={16} />
+            </button>
           </div>
-          <button
-            type="button"
-            className="theme-switch-btn"
-            aria-label={`Switch to ${themeMode === 'dark' ? 'light' : 'dark'} theme`}
-            onClick={onToggleTheme}
-          >
-            {themeMode === 'dark' ? (
-              <LightModeIcon size={20} />
-            ) : (
-              <DarkModeIcon size={20} />
-            )}
-          </button>
         </div>
 
-        <div className="drawer-section">
-          <span className="drawer-section-label">Navigation</span>
+        <div className="drawer-footer drawer-pill-container">
+          <span className="drawer-user-email" title={user?.email ?? ''}>
+            {user?.email}
+          </span>
           <button
             type="button"
-            className={`drawer-item ${activeView === 'home' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveView('home');
-              onClose();
-            }}
-          >
-            All Notes
-          </button>
-          <button
-            type="button"
-            className={`drawer-item ${activeView === 'favorites' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveView('favorites');
-              onClose();
-            }}
-          >
-            Favorites
-          </button>
-          <button
-            type="button"
-            className={`drawer-item ${activeView === 'bin' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveView('bin');
-              onClose();
-            }}
-          >
-            Bin
-          </button>
-        </div>
-
-        <div className="drawer-footer">
-          <span className="drawer-user-email">{user?.email}</span>
-          <button
-            type="button"
-            className="btn-ghost danger-text"
+            className="drawer-signout-btn"
             onClick={() => {
               reset();
               void signOut();
@@ -340,7 +426,17 @@ export function NavigationDrawer({
             Sign out
           </button>
         </div>
-      </aside>
+      </div>
+    </aside>
+  );
+
+  if (persistent) {
+    return drawerContent;
+  }
+
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      {drawerContent}
     </div>
   );
 }
