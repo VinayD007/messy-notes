@@ -5,7 +5,6 @@ import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import { StatusBar } from 'expo-status-bar';
 import {
   Animated,
   BackHandler,
@@ -683,11 +682,6 @@ export function FeedScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: palette.bg }]}>
-      <StatusBar
-        style={isDark ? 'light' : 'dark'}
-        backgroundColor={palette.bg}
-        translucent={false}
-      />
       {/* Header */}
       {selectionMode ? (
         <View

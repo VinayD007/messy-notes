@@ -3,7 +3,6 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
-import { StatusBar } from 'expo-status-bar';
 import {
   Modal,
   Platform,
@@ -15,7 +14,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useThemeStore } from '../store/themeStore';
 import {
   MessNoteMetrics,
   MessNoteTypography,
@@ -168,15 +166,12 @@ export function MobileConfirmDialog({
     </Pressable>
   );
 
-  const { isDark } = useThemeStore();
-
   if (asOverlay) {
     return content;
   }
 
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={onCancel}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
+    <Modal transparent animationType="fade" visible onRequestClose={onCancel} statusBarTranslucent>
       {content}
     </Modal>
   );
@@ -296,11 +291,8 @@ export function MobileOptionsSheet({
     onClose();
   };
 
-  const { isDark } = useThemeStore();
-
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
+    <Modal transparent animationType="slide" visible onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.bottomSheetBackdrop} onPress={onClose}>
         <Pressable
           style={[
@@ -500,12 +492,10 @@ export function MobileNoteDetailModal({
   onOpenLink: (url: string) => void;
 }) {
   const showSnackbar = useNotesStore((s) => s.showSnackbar);
-  const { isDark } = useThemeStore();
   if (!note) return null;
 
   return (
     <Modal animationType="slide" visible onRequestClose={onClose}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -687,11 +677,8 @@ export function MobileRegularEditorModal({
     );
   };
 
-  const { isDark } = useThemeStore();
-
   return (
     <Modal animationType="slide" visible onRequestClose={() => onCancel(text, spans)}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -868,11 +855,8 @@ export function MobileFieldValueModal({
     setConfirmDiscard(true);
   };
 
-  const { isDark } = useThemeStore();
-
   return (
     <Modal animationType="slide" visible onRequestClose={handleClose}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -1120,11 +1104,8 @@ export function MobileListModal({
     setConfirmDiscard(true);
   };
 
-  const { isDark } = useThemeStore();
-
   return (
     <Modal animationType="slide" visible onRequestClose={handleClose}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -1304,11 +1285,8 @@ export function MobilePartialCopyModal({
     });
   };
 
-  const { isDark } = useThemeStore();
-
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
+    <Modal transparent animationType="fade" visible onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable
           style={[
