@@ -189,6 +189,10 @@ class OfflineSyncEngine {
 
   async syncNow(): Promise<void> {
     if (!this.userId) return;
+    if (this.userId === 'offline-local-user') {
+      this.emitStatus('offline', null);
+      return;
+    }
     if (!this.isOnline) {
       this.emitStatus('offline', null);
       return;
@@ -272,7 +276,7 @@ class OfflineSyncEngine {
   }
 
   private async ensureRealtimeSubscribed(): Promise<void> {
-    if (!this.userId || !this.isOnline) return;
+    if (!this.userId || !this.isOnline || this.userId === 'offline-local-user') return;
     await this.authenticateRealtime();
     if (!this.userId || !this.isOnline) return;
     this.subscribeRealtime(this.userId);
@@ -388,6 +392,7 @@ class OfflineSyncEngine {
   }
 
   private async pullDeltas(userId: string): Promise<void> {
+    if (userId === 'offline-local-user') return;
     const lastPulledAt = await getLastPulledAt();
 
     let query = supabase

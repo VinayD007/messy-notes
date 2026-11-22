@@ -77,6 +77,26 @@ function readJson<T>(storage: MMKV, key: string): T | null {
   }
 }
 
+const META_CACHED_USER = 'meta:cached_user';
+
+export function getCachedUser(): { id: string; email?: string } | null {
+  const raw = prefsStorage.getString(META_CACHED_USER);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedUser(user: { id: string; email?: string } | null): void {
+  if (user) {
+    prefsStorage.set(META_CACHED_USER, JSON.stringify({ id: user.id, email: user.email }));
+  } else {
+    prefsStorage.delete(META_CACHED_USER);
+  }
+}
+
 export function getPreference(key: string): string | null {
   return prefsStorage.getString(key) ?? null;
 }

@@ -199,7 +199,7 @@ export function MobileNoteBubble({
                 <Text style={[styles.fieldKey, { color: palette.textPrimary }]}>
                   {entry.field}
                 </Text>
-                <Text style={{ color: palette.textMuted }}>=</Text>
+                <Text style={[styles.fieldEq, { color: palette.textMuted }]}>=</Text>
                 <Pressable
                   style={({ pressed }) => [
                     styles.fieldValBtn,
@@ -353,18 +353,31 @@ const styles = StyleSheet.create({
   rowNum: {
     ...MessNoteTypography.bodyMedium,
     minWidth: 20,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 20,
   },
   fieldKey: {
     ...MessNoteTypography.bodyMedium,
     fontWeight: '600',
     flexShrink: 1,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 20,
+  },
+  fieldEq: {
+    ...MessNoteTypography.bodyMedium,
+    fontWeight: '600',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 20,
   },
   fieldValBtn: {
     flex: 1,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     minHeight: 32,
     justifyContent: 'center',
   },
@@ -372,6 +385,8 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     lineHeight: 19,
     fontFamily: Platform.select({ android: 'monospace', default: 'monospace' }),
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   listText: {
     ...MessNoteTypography.bodyMedium,

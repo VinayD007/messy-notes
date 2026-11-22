@@ -12,7 +12,7 @@
       "package": "com.oneline.notes",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1E264A"
+        "backgroundColor": "#FEC900"
       }
     },
     "plugins": [

@@ -9,11 +9,14 @@ import { StatusBar } from 'expo-status-bar';
 import {
   Animated,
   BackHandler,
+  Dimensions,
   FlatList,
   Image,
   Keyboard,
   Linking,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   PanResponder,
   Pressable,
   RefreshControl,
@@ -58,6 +61,7 @@ import { MobileNoteBubble } from '../components/MobileNoteBubble';
 import { getPreference, setPreference } from '../lib/mmkvStorage';
 import { useAuthStore } from '../store/authStore';
 import { useNotesStore } from '../store/notesStore';
+import { useThemeStore } from '../store/themeStore';
 
 const FILTER_ORDER: NoteFilter[] = ['all', 'regular', 'field', 'list'];
 const DRAWER_WIDTH = 288;
@@ -106,7 +110,7 @@ export function FeedScreen() {
     emptyBin,
   } = useNotesStore();
 
-  const [themeOverride, setThemeOverride] = useState<'dark' | 'light' | null>(null);
+  const { isDark, palette, toggleTheme } = useThemeStore();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
@@ -128,6 +132,16 @@ export function FeedScreen() {
   const [confirmDialog, setConfirmDialog] = useState<MobileConfirmConfig | null>(null);
 
   const listRef = useRef<FlatList<Note> | null>(null);
+  const pagerRef = useRef<ScrollView | null>(null);
+  const [screenWidth, setScreenWidth] = useState(() => Dimensions.get('window').width);
+
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenWidth(window.width);
+    });
+    return () => sub.remove();
+  }, []);
+
   const filterScrollRef = useRef<ScrollView | null>(null);
   const filterChipLayoutsRef = useRef<
     Partial<Record<NoteFilter, { x: number; width: number }>>
@@ -252,12 +266,7 @@ export function FeedScreen() {
     }).start();
   }, [activeView, filterBarOpacity]);
 
-  useEffect(() => {
-    const val = getPreference('theme_mode');
-    if (val === 'dark' || val === 'light') {
-      setThemeOverride(val);
-    }
-  }, []);
+
 
   useEffect(() => {
     const hidePlusMenu = () => setPlusMenuOpen(false);
@@ -268,15 +277,6 @@ export function FeedScreen() {
       willShowSub.remove();
     };
   }, []);
-
-  const isDark = themeOverride !== null ? themeOverride === 'dark' : true;
-  const palette = isDark ? DarkMessNoteColors : LightMessNoteColors;
-
-  const toggleTheme = () => {
-    const next = isDark ? 'light' : 'dark';
-    setThemeOverride(next);
-    setPreference('theme_mode', next);
-  };
 
   // Back navigation priority order:
   // 1) Drawer open -> close; 2) Expanded composer; 3) '+' menu; 4) Multi-selection;
@@ -406,129 +406,80 @@ export function FeedScreen() {
   });
 
   const handleFilterChange = useCallback(
-    (nextFilter: NoteFilter) => {
+    (nextFilter: NoteFilter, scrollPager = true) => {
       activeFilterRef.current = nextFilter;
       setPlusMenuOpen(false);
       clearSelection();
       setFilterType(nextFilter);
-      listRef.current?.scrollToOffset({ offset: 0, animated: false });
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      if (scrollPager) {
+        const pageIdx = FILTER_ORDER.indexOf(nextFilter);
+        if (pageIdx >= 0) {
+          pagerRef.current?.scrollTo({
+            x: pageIdx * screenWidth,
+            animated: true,
+          });
+        }
+      }
 
       const chipLayout = filterChipLayoutsRef.current[nextFilter];
       if (chipLayout) {
+        const targetX = Math.max(0, chipLayout.x + chipLayout.width / 2 - screenWidth / 2);
         filterScrollRef.current?.scrollTo({
-          x: Math.max(0, chipLayout.x - 16),
+          x: targetX,
           animated: true,
         });
       }
     },
-    [clearSelection, setFilterType]
+    [clearSelection, setFilterType, screenWidth]
   );
 
-  const handleFeedSwipe = useCallback(
-    (dx: number, startX: number) => {
-      if (activeView === 'home') {
-        if (!listSwipeEnabled) return;
-        const currentFilter = activeFilterRef.current;
-        const currentIdx = FILTER_ORDER.indexOf(currentFilter);
-        if (dx < 0) {
-          if (currentIdx < FILTER_ORDER.length - 1) {
-            handleFilterChange(FILTER_ORDER[currentIdx + 1]!);
-          }
-        } else if (currentFilter === 'all') {
-          if (drawerGesturesEnabled && !drawerAnimatingRef.current) {
-            openDrawer();
-          }
-        } else if (currentIdx > 0) {
-          handleFilterChange(FILTER_ORDER[currentIdx - 1]!);
-        }
-        return;
-      }
-
-      if (
-        dx > 0 &&
-        startX <= DRAWER_EDGE_WIDTH &&
-        drawerGesturesEnabled &&
-        !drawerAnimatingRef.current
-      ) {
-        openDrawer();
+  const onPagerMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetX = e.nativeEvent.contentOffset.x;
+      const pageIdx = Math.round(offsetX / screenWidth);
+      const targetFilter = FILTER_ORDER[pageIdx];
+      if (targetFilter && targetFilter !== activeFilterRef.current) {
+        handleFilterChange(targetFilter, false);
       }
     },
-    [
-      activeView,
-      drawerGesturesEnabled,
-      handleFilterChange,
-      listSwipeEnabled,
-      openDrawer,
-    ]
+    [handleFilterChange, screenWidth]
   );
 
-  // Single pointer-input handler on notes list (Home filter swipes + All/Favorites/Bin drawer swipe).
-  const panResponder = useMemo(() => {
-    const shouldClaimHorizontalSwipe = (gesture: {
-      dx: number;
-      dy: number;
-      x0: number;
-    }) => {
-      if (drawerOpen) return false;
-      const absX = Math.abs(gesture.dx);
-      const absY = Math.abs(gesture.dy);
-      if (absX <= SWIPE_TOUCH_SLOP || absX <= absY * 1.5) return false;
-      if (listSwipeEnabled) {
-        if (
-          activeFilterRef.current === 'all' &&
-          gesture.dx > 0 &&
-          !drawerGesturesEnabled
-        ) {
-          return false;
-        }
-        return true;
+  useEffect(() => {
+    if (activeView === 'home') {
+      const idx = FILTER_ORDER.indexOf(filterType);
+      if (idx >= 0) {
+        pagerRef.current?.scrollTo({ x: idx * screenWidth, animated: false });
       }
-      return (
-        drawerGesturesEnabled &&
-        !drawerAnimatingRef.current &&
-        gesture.dx > SWIPE_TOUCH_SLOP &&
-        gesture.x0 <= DRAWER_EDGE_WIDTH
-      );
-    };
-
-    const maybeTriggerSwipe = (gesture: {
-      dx: number;
-      dy: number;
-      x0: number;
-    }) => {
-      if (swipeTriggeredRef.current) return;
-      const absX = Math.abs(gesture.dx);
-      const absY = Math.abs(gesture.dy);
-      if (absX >= SWIPE_TRIGGER_DISTANCE && absX > absY * 1.5) {
-        swipeTriggeredRef.current = true;
-        handleFeedSwipe(gesture.dx, gesture.x0);
+      const chipLayout = filterChipLayoutsRef.current[filterType];
+      if (chipLayout) {
+        const targetX = Math.max(0, chipLayout.x + chipLayout.width / 2 - screenWidth / 2);
+        filterScrollRef.current?.scrollTo({ x: targetX, animated: false });
       }
-    };
+    }
+  }, [activeView, screenWidth]);
 
+  const edgePanResponder = useMemo(() => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture: (_evt, gesture) =>
-        shouldClaimHorizontalSwipe(gesture),
-      onMoveShouldSetPanResponder: (_evt, gesture) =>
-        shouldClaimHorizontalSwipe(gesture),
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        swipeTriggeredRef.current = false;
-      },
-      onPanResponderMove: (_evt, gesture) => {
-        maybeTriggerSwipe(gesture);
+      onMoveShouldSetPanResponder: (_evt, gesture) => {
+        return (
+          drawerGesturesEnabled &&
+          !drawerOpen &&
+          !drawerAnimatingRef.current &&
+          gesture.dx > 16 &&
+          gesture.x0 <= 32
+        );
       },
       onPanResponderRelease: (_evt, gesture) => {
-        maybeTriggerSwipe(gesture);
-        swipeTriggeredRef.current = false;
-      },
-      onPanResponderTerminate: () => {
-        swipeTriggeredRef.current = false;
+        if (gesture.dx > 40) {
+          openDrawer();
+        }
       },
     });
-  }, [drawerOpen, drawerGesturesEnabled, handleFeedSwipe, listSwipeEnabled]);
+  }, [drawerGesturesEnabled, drawerOpen, openDrawer]);
 
   if (!user) return null;
 
@@ -543,12 +494,12 @@ export function FeedScreen() {
   const binCount = notes.filter((n) => n.deleted_at !== null).length;
 
   const statusLabel = !isOnline
-    ? `Offline (${pendingCount} queued)`
+    ? pendingCount > 0
+      ? `Offline (${pendingCount})`
+      : 'Offline'
     : syncState === 'syncing'
-      ? 'Syncing...'
-      : realtimeConnected
-        ? 'Live'
-        : 'Connected';
+      ? 'Syncing'
+      : 'Live';
 
   const confirmSoftDelete = (ids: string[]) => {
     setConfirmDialog({
@@ -732,7 +683,11 @@ export function FeedScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: palette.bg }]}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <StatusBar
+        style={isDark ? 'light' : 'dark'}
+        backgroundColor={palette.bg}
+        translucent={false}
+      />
       {/* Header */}
       {selectionMode ? (
         <View
@@ -991,7 +946,7 @@ export function FeedScreen() {
                       styles.headerStatusDot,
                       {
                         backgroundColor: !isOnline
-                          ? palette.destructiveAction
+                          ? '#FF9F0A'
                           : realtimeConnected
                             ? '#30D158'
                             : palette.noteBubbleAccent,
@@ -1004,7 +959,7 @@ export function FeedScreen() {
                     styles.headerStatusSubText,
                     {
                       color: !isOnline
-                        ? palette.textMuted
+                        ? '#FF9F0A'
                         : syncState === 'syncing'
                           ? palette.noteBubbleAccent
                           : palette.textSecondary,
@@ -1179,58 +1134,156 @@ export function FeedScreen() {
       ) : null}
 
       {/* Feed & Floating Composer Stack */}
-      <View style={styles.feedWrap} {...panResponder.panHandlers}>
-        <FlatList
-          ref={listRef}
-          keyboardShouldPersistTaps="handled"
-          data={displayedNotes}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[
-            styles.feedContent,
-            { paddingBottom: showComposer ? composerHeight + 24 : 28 },
-          ]}
-          refreshControl={
-            <RefreshControl
-              refreshing={syncState === 'syncing'}
-              onRefresh={() => void triggerManualSync()}
-              tintColor={palette.noteBubbleAccent}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <View
-                style={[
-                  styles.emptyIconBadge,
-                  {
-                    backgroundColor: palette.surfaceCard,
-                    borderColor: palette.outlineVariant,
-                  },
-                ]}
-              >
-                <MaterialIcons name={emptyIcon} size={30} color={palette.noteBubbleAccent} />
+      <View style={styles.feedWrap}>
+        {drawerGesturesEnabled ? (
+          <View style={styles.edgeSwipeZone} {...edgePanResponder.panHandlers} />
+        ) : null}
+
+        {activeView === 'home' ? (
+          <ScrollView
+            ref={pagerRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            style={styles.pagerScrollView}
+            contentContainerStyle={styles.pagerContent}
+            onMomentumScrollEnd={onPagerMomentumScrollEnd}
+          >
+            {FILTER_ORDER.map((filter) => {
+              const filterNotes = applyPinOrdering(
+                getDisplayedNotes(notes, filter, homeSearchQuery)
+              );
+              const filterEmptyIcon =
+                filter === 'field'
+                  ? 'table-chart'
+                  : filter === 'list'
+                    ? 'format-list-bulleted'
+                    : 'lightbulb-outline';
+              const filterEmptyMsg = homeSearchQuery
+                ? 'No matching notes'
+                : filter === 'field'
+                  ? 'No field notes yet'
+                  : filter === 'list'
+                    ? 'No list notes yet'
+                    : filter === 'regular'
+                      ? 'No regular notes yet'
+                      : 'No notes yet';
+              return (
+                <View key={filter} style={[styles.pagerPage, { width: screenWidth }]}>
+                  <FlatList
+                    keyboardShouldPersistTaps="handled"
+                    data={filterNotes}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={[
+                      styles.feedContent,
+                      { paddingBottom: showComposer ? composerHeight + 24 : 28 },
+                    ]}
+                    refreshControl={
+                      <RefreshControl
+                        refreshing={syncState === 'syncing'}
+                        onRefresh={() => void triggerManualSync()}
+                        tintColor={palette.noteBubbleAccent}
+                      />
+                    }
+                    ListEmptyComponent={
+                      <View style={styles.emptyWrap}>
+                        <View
+                          style={[
+                            styles.emptyIconBadge,
+                            {
+                              backgroundColor: palette.surfaceCard,
+                              borderColor: palette.outlineVariant,
+                            },
+                          ]}
+                        >
+                          <MaterialIcons
+                            name={filterEmptyIcon}
+                            size={30}
+                            color={palette.noteBubbleAccent}
+                          />
+                        </View>
+                        <Text style={[styles.emptyText, { color: palette.textPrimary }]}>
+                          {filterEmptyMsg}
+                        </Text>
+                        <Text style={[styles.emptySubtext, { color: palette.textSecondary }]}>
+                          {homeSearchQuery
+                            ? 'Try another search term'
+                            : 'Tap + or Start a Note below'}
+                        </Text>
+                      </View>
+                    }
+                    renderItem={({ item }) => (
+                      <MobileNoteBubble
+                        note={item}
+                        palette={palette}
+                        isSelected={selectedNoteIds.has(item.id)}
+                        isDirty={dirtyIds.has(item.id)}
+                        selectionMode={selectionMode}
+                        showPinBadge={true}
+                        onOpenOptions={setOptionsNote}
+                        onRequestOpenLink={confirmOpenLink}
+                        onPreviewPhoto={setPreviewPhotoUri}
+                      />
+                    )}
+                  />
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : (
+          <FlatList
+            ref={listRef}
+            keyboardShouldPersistTaps="handled"
+            data={displayedNotes}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[
+              styles.feedContent,
+              { paddingBottom: showComposer ? composerHeight + 24 : 28 },
+            ]}
+            refreshControl={
+              <RefreshControl
+                refreshing={syncState === 'syncing'}
+                onRefresh={() => void triggerManualSync()}
+                tintColor={palette.noteBubbleAccent}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyWrap}>
+                <View
+                  style={[
+                    styles.emptyIconBadge,
+                    {
+                      backgroundColor: palette.surfaceCard,
+                      borderColor: palette.outlineVariant,
+                    },
+                  ]}
+                >
+                  <MaterialIcons name={emptyIcon} size={30} color={palette.noteBubbleAccent} />
+                </View>
+                <Text style={[styles.emptyText, { color: palette.textPrimary }]}>
+                  {emptyMessage}
+                </Text>
+                <Text style={[styles.emptySubtext, { color: palette.textSecondary }]}>
+                  {emptySubtitle}
+                </Text>
               </View>
-              <Text style={[styles.emptyText, { color: palette.textPrimary }]}>
-                {emptyMessage}
-              </Text>
-              <Text style={[styles.emptySubtext, { color: palette.textSecondary }]}>
-                {emptySubtitle}
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <MobileNoteBubble
-              note={item}
-              palette={palette}
-              isSelected={selectedNoteIds.has(item.id)}
-              isDirty={dirtyIds.has(item.id)}
-              selectionMode={selectionMode}
-              showPinBadge={activeView !== 'bin'}
-              onOpenOptions={setOptionsNote}
-              onRequestOpenLink={confirmOpenLink}
-              onPreviewPhoto={setPreviewPhotoUri}
-            />
-          )}
-        />
+            }
+            renderItem={({ item }) => (
+              <MobileNoteBubble
+                note={item}
+                palette={palette}
+                isSelected={selectedNoteIds.has(item.id)}
+                isDirty={dirtyIds.has(item.id)}
+                selectionMode={selectionMode}
+                showPinBadge={activeView !== 'bin'}
+                onOpenOptions={setOptionsNote}
+                onRequestOpenLink={confirmOpenLink}
+                onPreviewPhoto={setPreviewPhotoUri}
+              />
+            )}
+          />
+        )}
       </View>
 
       {showComposer && plusMenuOpen ? (
@@ -2128,6 +2181,23 @@ const styles = StyleSheet.create({
   feedWrap: {
     flex: 1,
     position: 'relative',
+  },
+  edgeSwipeZone: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 24,
+    zIndex: 10,
+  },
+  pagerScrollView: {
+    flex: 1,
+  },
+  pagerContent: {
+    flexGrow: 1,
+  },
+  pagerPage: {
+    flex: 1,
   },
   feedContent: {
     paddingHorizontal: MessNoteMetrics.outerGutter,

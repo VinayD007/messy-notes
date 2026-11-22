@@ -3,6 +3,7 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
+import { StatusBar } from 'expo-status-bar';
 import {
   Modal,
   Platform,
@@ -14,6 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useThemeStore } from '../store/themeStore';
 import {
   MessNoteMetrics,
   MessNoteTypography,
@@ -166,12 +168,15 @@ export function MobileConfirmDialog({
     </Pressable>
   );
 
+  const { isDark } = useThemeStore();
+
   if (asOverlay) {
     return content;
   }
 
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onCancel}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       {content}
     </Modal>
   );
@@ -291,8 +296,11 @@ export function MobileOptionsSheet({
     onClose();
   };
 
+  const { isDark } = useThemeStore();
+
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <Pressable style={styles.bottomSheetBackdrop} onPress={onClose}>
         <Pressable
           style={[
@@ -492,10 +500,12 @@ export function MobileNoteDetailModal({
   onOpenLink: (url: string) => void;
 }) {
   const showSnackbar = useNotesStore((s) => s.showSnackbar);
+  const { isDark } = useThemeStore();
   if (!note) return null;
 
   return (
     <Modal animationType="slide" visible onRequestClose={onClose}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -567,11 +577,11 @@ export function MobileNoteDetailModal({
                       { backgroundColor: palette.surfaceCard, borderColor: palette.borderSubtle },
                     ]}
                   >
-                    <Text style={{ color: palette.textMuted }}>{idx + 1}.</Text>
-                    <Text style={{ color: palette.textPrimary, fontWeight: '600' }}>
+                    <Text style={[styles.rowIdxText, { color: palette.textMuted }]}>{idx + 1}.</Text>
+                    <Text style={[styles.detailFieldKeyText, { color: palette.textPrimary }]}>
                       {entry.field}
                     </Text>
-                    <Text style={{ color: palette.textMuted }}>=</Text>
+                    <Text style={[styles.detailFieldEqText, { color: palette.textMuted }]}>=</Text>
                     <Pressable
                       style={({ pressed }) => [
                         styles.detailFieldValBtn,
@@ -588,14 +598,16 @@ export function MobileNoteDetailModal({
                       }}
                     >
                       <Text
-                        style={{
-                          color: palette.textSecondary,
-                          fontFamily: Platform.select({
-                            android: 'monospace',
-                            default: 'monospace',
-                          }),
-                          fontSize: 13.5,
-                        }}
+                        style={[
+                          styles.detailFieldValText,
+                          {
+                            color: palette.textSecondary,
+                            fontFamily: Platform.select({
+                              android: 'monospace',
+                              default: 'monospace',
+                            }),
+                          },
+                        ]}
                       >
                         {entry.value}
                       </Text>
@@ -675,8 +687,11 @@ export function MobileRegularEditorModal({
     );
   };
 
+  const { isDark } = useThemeStore();
+
   return (
     <Modal animationType="slide" visible onRequestClose={() => onCancel(text, spans)}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -853,8 +868,11 @@ export function MobileFieldValueModal({
     setConfirmDiscard(true);
   };
 
+  const { isDark } = useThemeStore();
+
   return (
     <Modal animationType="slide" visible onRequestClose={handleClose}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -1102,8 +1120,11 @@ export function MobileListModal({
     setConfirmDiscard(true);
   };
 
+  const { isDark } = useThemeStore();
+
   return (
     <Modal animationType="slide" visible onRequestClose={handleClose}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <View style={[styles.fullscreen, { backgroundColor: palette.bg }]}>
         <View
           style={[
@@ -1283,8 +1304,11 @@ export function MobilePartialCopyModal({
     });
   };
 
+  const { isDark } = useThemeStore();
+
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={palette.bg} translucent={false} />
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable
           style={[
@@ -1646,28 +1670,57 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    minHeight: 50,
+    paddingVertical: 8,
+    minHeight: 48,
   },
   rowIdxText: {
     ...MessNoteTypography.bodyMedium,
     minWidth: 20,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 20,
   },
-  flexInput: {
-    flex: 1,
-    ...MessNoteTypography.bodyLarge,
-    paddingVertical: 4,
+  detailFieldKeyText: {
+    ...MessNoteTypography.bodyMedium,
+    fontWeight: '600',
+    flexShrink: 1,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 20,
+  },
+  detailFieldEqText: {
+    ...MessNoteTypography.bodyMedium,
+    fontWeight: '600',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 20,
   },
   detailFieldValBtn: {
     flex: 1,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  detailFieldValText: {
+    fontSize: 13.5,
+    lineHeight: 19,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  flexInput: {
+    flex: 1,
+    ...MessNoteTypography.bodyLarge,
+    height: 38,
+    paddingVertical: 0,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   fieldEqBtn: {
     minWidth: 34,
-    minHeight: 34,
+    height: 34,
     paddingHorizontal: 8,
     borderRadius: 10,
     borderWidth: 1,
@@ -1677,6 +1730,9 @@ const styles = StyleSheet.create({
   fieldEqText: {
     ...MessNoteTypography.titleMedium,
     fontWeight: '700',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    lineHeight: 22,
   },
   rowDeleteBtn: {
     width: 34,

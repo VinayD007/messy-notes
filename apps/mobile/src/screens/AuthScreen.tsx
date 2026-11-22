@@ -14,7 +14,7 @@ import { DarkMessNoteColors, MessNoteMetrics, MessNoteTypography } from '@messy-
 import { useAuthStore } from '../store/authStore';
 
 export function AuthScreen() {
-  const { signIn, signUp, loading, error, clearError } = useAuthStore();
+  const { signIn, signUp, loading, error, clearError, continueOffline } = useAuthStore();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -114,6 +114,19 @@ export function AuthScreen() {
                 : 'Already have an account? Sign in'}
             </Text>
           </Pressable>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <Pressable
+            style={({ pressed }) => [styles.offlineBtn, pressed && { opacity: 0.72 }]}
+            onPress={() => continueOffline()}
+          >
+            <Text style={styles.offlineBtnText}>Continue Offline</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -121,6 +134,33 @@ export function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: DarkMessNoteColors.outlineVariant,
+  },
+  dividerText: {
+    ...MessNoteTypography.labelMedium,
+    color: DarkMessNoteColors.textMuted,
+  },
+  offlineBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: DarkMessNoteColors.outlineVariant,
+    backgroundColor: DarkMessNoteColors.surfaceContainerHigh,
+  },
+  offlineBtnText: {
+    ...MessNoteTypography.labelLarge,
+    color: DarkMessNoteColors.textPrimary,
+  },
   container: {
     flex: 1,
     backgroundColor: DarkMessNoteColors.bg,

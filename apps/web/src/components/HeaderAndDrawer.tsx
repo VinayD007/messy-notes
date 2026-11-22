@@ -7,6 +7,7 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { useNotesStore } from '../store/notesStore';
 import {
+  AndroidIcon,
   ArrowBackIcon,
   ChecklistIcon,
   CloseIcon,
@@ -432,6 +433,16 @@ export function NavigationDrawer({
       </div>
 
       <div className="drawer-footer-group">
+        <a
+          href="https://github.com/VinayD007/messy-notes"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="drawer-apk-download-btn"
+          title="Download MessyNotes Android APK from GitHub"
+        >
+          <AndroidIcon size={18} />
+          <span>Download Android APK</span>
+        </a>
         <div className="drawer-footer drawer-pill-container">
           <span className="drawer-user-email" title={user?.email ?? ''}>
             {user?.email}

@@ -1,7 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { formatSupabaseAuthError } from '@messy-notes/shared';
 import { create } from 'zustand';
-import { clearAllLocalData } from '../lib/mmkvStorage';
+import { clearAllLocalData, getCachedUser, setCachedUser } from '../lib/mmkvStorage';
 import {
   isSupabaseConfigured,
   registerSupabaseAppStateRefresh,
@@ -21,10 +21,11 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
+  continueOffline: () => void;
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
   initialized: false,
@@ -32,12 +33,23 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   initialize: () => {
+    // If we have an existing local cached user, immediately restore them so the app opens instantly offline
+    const cached = getCachedUser();
+    if (cached) {
+      set({
+        session: null,
+        user: cached as unknown as User,
+        initialized: true,
+        error: null,
+      });
+    }
+
     if (!isSupabaseConfigured) {
       set({
         session: null,
-        user: null,
+        user: cached ? (cached as unknown as User) : null,
         initialized: true,
-        error: SUPABASE_CONFIG_ERROR,
+        error: cached ? null : SUPABASE_CONFIG_ERROR,
       });
       return () => {};
     }
@@ -52,9 +64,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         if (data.session?.access_token) {
           void supabase.realtime.setAuth(data.session.access_token);
         }
+        if (data.session?.user) {
+          setCachedUser(data.session.user);
+        }
         set({
           session: data.session ?? null,
-          user: data.session?.user ?? null,
+          user: data.session?.user ?? (get().user ?? (cached as unknown as User) ?? null),
           initialized: true,
           error: error
             ? formatSupabaseAuthError(error, 'Failed to initialize session', supabaseConfig.maskedUrl)
@@ -63,15 +78,19 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
       .catch((err: unknown) => {
         if (!active) return;
+        // Never lock an offline user out if we already have local session / cached profile
+        const fallbackUser = get().user ?? (cached as unknown as User) ?? null;
         set({
           session: null,
-          user: null,
+          user: fallbackUser,
           initialized: true,
-          error: formatSupabaseAuthError(
-            err,
-            'Failed to initialize session',
-            supabaseConfig.maskedUrl
-          ),
+          error: fallbackUser
+            ? null
+            : formatSupabaseAuthError(
+                err,
+                'Failed to initialize session',
+                supabaseConfig.maskedUrl
+              ),
         });
       });
 
@@ -82,9 +101,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (session?.access_token) {
         void supabase.realtime.setAuth(session.access_token);
       }
+      if (session?.user) {
+        setCachedUser(session.user);
+      }
       set({
         session: session ?? null,
-        user: session?.user ?? null,
+        user: session?.user ?? (get().user ?? (cached as unknown as User) ?? null),
         initialized: true,
       });
     });
@@ -117,6 +139,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         );
         set({ loading: false, error: message });
         throw error;
+      }
+
+      if (data.user) {
+        setCachedUser(data.user);
       }
 
       set({
@@ -157,6 +183,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw error;
       }
 
+      if (data.user) {
+        setCachedUser(data.user);
+      }
+
       set({
         session: data.session ?? null,
         user: data.user ?? null,
@@ -177,6 +207,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     set({ loading: true, error: null });
     syncEngine.stop();
+    setCachedUser(null);
     await clearAllLocalData();
 
     const { error } = await supabase.auth.signOut();
@@ -186,6 +217,24 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     set({ session: null, user: null, loading: false, error: null });
+  },
+
+  continueOffline: () => {
+    const offlineUser = {
+      id: 'offline-local-user',
+      email: 'offline@messynotes.local',
+      app_metadata: {},
+      user_metadata: {},
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+    } as unknown as User;
+    setCachedUser(offlineUser);
+    set({
+      session: null,
+      user: offlineUser,
+      initialized: true,
+      error: null,
+    });
   },
 
   clearError: () => set({ error: null }),
