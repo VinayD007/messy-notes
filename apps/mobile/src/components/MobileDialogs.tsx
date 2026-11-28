@@ -21,6 +21,7 @@ import {
   adjustSpansForTrim,
   buildGroupedText,
   canPinNote,
+  getAttachmentType,
   hasCopyableText,
   isNoteEdited,
   joinPartialCopyTokens,
@@ -37,6 +38,7 @@ import {
   type TextSpan,
 } from '@messy-notes/shared';
 import { useNotesStore } from '../store/notesStore';
+import { MobileDocumentCard } from './MobileDocumentCard';
 import { MobilePlainTextView } from './MobilePlainTextView';
 
 export interface MobileConfirmConfig {
@@ -624,6 +626,23 @@ export function MobileNoteDetailModal({
                       {item.value}
                     </Text>
                   </View>
+                ))}
+            </View>
+          ) : null}
+
+          {note.photo_attachments && note.photo_attachments.length > 0 ? (
+            <View style={{ marginVertical: 8, gap: 6 }}>
+              {note.photo_attachments
+                .filter(
+                  (att) =>
+                    (att.type ?? getAttachmentType(att.mimeType, att.fileName)) === 'document'
+                )
+                .map((doc) => (
+                  <MobileDocumentCard
+                    key={doc.id}
+                    attachment={doc}
+                    palette={palette}
+                  />
                 ))}
             </View>
           ) : null}

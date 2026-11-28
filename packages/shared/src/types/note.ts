@@ -3,7 +3,10 @@ export type NoteFilter = 'all' | NoteType;
 export type NoteView = 'home' | 'favorites' | 'bin';
 
 export const MAX_PINS_PER_CATEGORY = 2;
-export const MAX_PHOTOS_PER_NOTE = 12;
+export const MAX_ATTACHMENTS_PER_NOTE = 12;
+export const MAX_PHOTOS_PER_NOTE = MAX_ATTACHMENTS_PER_NOTE;
+export const MAX_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+export const MAX_ATTACHMENT_SIZE_LABEL = '25 MB';
 
 export interface TextSpan {
   start: number;
@@ -25,14 +28,118 @@ export interface ListRowEntry {
   insertionOrder: number;
 }
 
-export interface PhotoAttachment {
+export type AttachmentType = 'image' | 'video' | 'document';
+
+export interface NoteAttachment {
   id: string;
-  /** Safe relative file name inside app-private note_photos/ directory */
+  /** Safe file name inside app storage or original uploaded name */
   fileName: string;
   /** Supabase Storage object path: `${userId}/${noteId}/${fileName}` */
   storagePath: string;
   mimeType: string;
+  type: AttachmentType;
+  fileSize?: number;
+  url?: string;
 }
+
+export type PhotoAttachment = NoteAttachment;
+
+export function getAttachmentType(mimeType?: string, fileName?: string): AttachmentType {
+  const mime = (mimeType || '').toLowerCase();
+  const ext = (fileName || '').split('.').pop()?.toLowerCase() || '';
+
+  if (
+    mime.startsWith('image/') ||
+    ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'bmp', 'svg'].includes(ext)
+  ) {
+    return 'image';
+  }
+
+  if (
+    mime.startsWith('video/') ||
+    ['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp', 'm4v'].includes(ext)
+  ) {
+    return 'video';
+  }
+
+  return 'document';
+}
+
+export function formatFileSize(bytes?: number): string {
+  if (bytes === undefined || bytes === null || bytes <= 0 || Number.isNaN(bytes)) {
+    return '';
+  }
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export interface DocumentBadgeInfo {
+  label: string;
+  extension: string;
+  color: string;
+}
+
+export function getDocumentBadge(mimeType?: string, fileName?: string): DocumentBadgeInfo {
+  const ext = (fileName || '').split('.').pop()?.toUpperCase() || 'FILE';
+  const cleanExt = ext.length > 5 ? 'FILE' : ext;
+
+  if (['PDF'].includes(cleanExt)) {
+    return { label: 'PDF', extension: 'pdf', color: '#EF4444' };
+  }
+  if (['XLS', 'XLSX', 'CSV'].includes(cleanExt)) {
+    return { label: cleanExt, extension: cleanExt.toLowerCase(), color: '#10B981' };
+  }
+  if (['DOC', 'DOCX'].includes(cleanExt)) {
+    return { label: cleanExt, extension: cleanExt.toLowerCase(), color: '#3B82F6' };
+  }
+  if (['PPT', 'PPTX'].includes(cleanExt)) {
+    return { label: cleanExt, extension: cleanExt.toLowerCase(), color: '#F97316' };
+  }
+  if (['TXT', 'MD', 'JSON', 'RTF', 'LOG'].includes(cleanExt)) {
+    return { label: cleanExt, extension: cleanExt.toLowerCase(), color: '#6B7280' };
+  }
+  if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(cleanExt)) {
+    return { label: cleanExt, extension: cleanExt.toLowerCase(), color: '#8B5CF6' };
+  }
+  return { label: cleanExt || 'FILE', extension: cleanExt.toLowerCase(), color: '#6366F1' };
+}
+
+export function validateAttachmentSize(size?: number): { valid: boolean; error?: string } {
+  if (size !== undefined && size > MAX_ATTACHMENT_SIZE_BYTES) {
+    return {
+      valid: false,
+      error: `File exceeds the ${MAX_ATTACHMENT_SIZE_LABEL} limit (${formatFileSize(size)}).`,
+    };
+  }
+  return { valid: true };
+}
+
+export const WEB_ATTACHMENT_ACCEPT = [
+  'image/*',
+  'video/*',
+  '.pdf',
+  'application/pdf',
+  '.xls',
+  '.xlsx',
+  '.csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  '.doc',
+  '.docx',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.ppt',
+  '.pptx',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.txt',
+  'text/plain',
+  '.zip',
+  'application/zip',
+  'application/x-zip-compressed',
+].join(',');
 
 export interface RegularNoteContent {
   body: string;
@@ -177,7 +284,21 @@ export function toDomainNote(row: NoteRow): Note {
     pinned: Boolean(row.pinned) && !row.deleted_at,
     pinned_at: row.deleted_at ? null : (row.pinned_at ?? null),
     photo_attachments: Array.isArray(row.photo_attachments)
-      ? row.photo_attachments.slice(0, MAX_PHOTOS_PER_NOTE)
+      ? row.photo_attachments.slice(0, MAX_ATTACHMENTS_PER_NOTE).map((att, idx) => {
+          const raw = (att || {}) as Partial<NoteAttachment>;
+          const fileName = raw.fileName || `file-${idx}`;
+          const mimeType = raw.mimeType || 'application/octet-stream';
+          const type = raw.type ?? getAttachmentType(mimeType, fileName);
+          return {
+            id: raw.id || `att-${idx}`,
+            fileName,
+            storagePath: raw.storagePath || '',
+            mimeType,
+            type,
+            fileSize: typeof raw.fileSize === 'number' ? raw.fileSize : undefined,
+            url: typeof raw.url === 'string' ? raw.url : undefined,
+          };
+        })
       : [],
     deleted_at: row.deleted_at ?? null,
     created_at: row.created_at,

@@ -4,6 +4,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as MediaLibrary from 'expo-media-library';
 import {
   Animated,
@@ -29,6 +30,9 @@ import {
   DEFAULT_WEB_APP_URL,
   DarkMessNoteColors,
   LightMessNoteColors,
+  MAX_ATTACHMENTS_PER_NOTE,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  MAX_ATTACHMENT_SIZE_LABEL,
   MAX_PHOTOS_PER_NOTE,
   MessNoteFontFamily,
   MessNoteMetrics,
@@ -36,13 +40,17 @@ import {
   MessNoteTypography,
   applyPinOrdering,
   buildGroupedText,
+  formatFileSize,
+  getAttachmentType,
   getDisplayedBinNotes,
   getDisplayedFavorites,
   getDisplayedNotes,
+  getDocumentBadge,
   hasCopyableText,
   type FieldNote,
   type ListNote,
   type Note,
+  type NoteAttachment,
   type NoteFilter,
   type TextSpan,
 } from '@messy-notes/shared';
@@ -116,7 +124,10 @@ export function FeedScreen() {
 
   const [draftText, setDraftText] = useState('');
   const [draftSpans, setDraftSpans] = useState<TextSpan[]>([]);
-  const [draftPhotos, setDraftPhotos] = useState<Array<{ uri: string; mimeType?: string }>>([]);
+  const [draftPhotos, setDraftPhotos] = useState<
+    Array<{ uri: string; mimeType?: string; name?: string; size?: number }>
+  >([]);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
   const [optionsNote, setOptionsNote] = useState<Note | null>(null);
   const [detailNote, setDetailNote] = useState<Note | null>(null);
@@ -548,21 +559,83 @@ export function FeedScreen() {
   };
 
   const handlePickPhotos = async () => {
-    const remaining = MAX_PHOTOS_PER_NOTE - draftPhotos.length;
-    if (remaining <= 0) return;
+    setAttachmentSheetOpen(false);
+    const remaining = MAX_ATTACHMENTS_PER_NOTE - draftPhotos.length;
+    if (remaining <= 0) {
+      showSnackbar({ message: `Maximum ${MAX_ATTACHMENTS_PER_NOTE} attachments per note` });
+      return;
+    }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: true,
-      selectionLimit: remaining,
-      quality: 0.85,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.85,
+      });
 
-    if (!result.canceled && result.assets.length > 0) {
-      const picked = result.assets
-        .slice(0, remaining)
-        .map((a) => ({ uri: a.uri, mimeType: a.mimeType ?? 'image/jpeg' }));
-      setDraftPhotos((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS_PER_NOTE));
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const picked: Array<{ uri: string; mimeType?: string; name?: string; size?: number }> = [];
+        for (const a of result.assets) {
+          if (a.fileSize !== undefined && a.fileSize > MAX_ATTACHMENT_SIZE_BYTES) {
+            showSnackbar({
+              message: `File "${a.fileName ?? 'media'}" exceeds ${MAX_ATTACHMENT_SIZE_LABEL} (${formatFileSize(a.fileSize)})`,
+            });
+            continue;
+          }
+          picked.push({
+            uri: a.uri,
+            name: a.fileName ?? undefined,
+            mimeType: a.mimeType ?? (a.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+            size: a.fileSize ?? undefined,
+          });
+        }
+        if (picked.length > 0) {
+          setDraftPhotos((prev) => [...prev, ...picked].slice(0, MAX_ATTACHMENTS_PER_NOTE));
+        }
+      }
+    } catch {
+      showSnackbar({ message: 'Could not access photo library' });
+    }
+  };
+
+  const handlePickDocuments = async () => {
+    setAttachmentSheetOpen(false);
+    const remaining = MAX_ATTACHMENTS_PER_NOTE - draftPhotos.length;
+    if (remaining <= 0) {
+      showSnackbar({ message: `Maximum ${MAX_ATTACHMENTS_PER_NOTE} attachments per note` });
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: true,
+        type: '*/*',
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const picked: Array<{ uri: string; mimeType?: string; name?: string; size?: number }> = [];
+        for (const a of result.assets) {
+          if (a.size !== undefined && a.size > MAX_ATTACHMENT_SIZE_BYTES) {
+            showSnackbar({
+              message: `File "${a.name}" exceeds ${MAX_ATTACHMENT_SIZE_LABEL} (${formatFileSize(a.size)})`,
+            });
+            continue;
+          }
+          picked.push({
+            uri: a.uri,
+            name: a.name,
+            mimeType: a.mimeType ?? undefined,
+            size: a.size ?? undefined,
+          });
+        }
+        if (picked.length > 0) {
+          setDraftPhotos((prev) => [...prev, ...picked].slice(0, MAX_ATTACHMENTS_PER_NOTE));
+        }
+      }
+    } catch {
+      showSnackbar({ message: 'Could not open document picker' });
     }
   };
 
@@ -1389,18 +1462,79 @@ export function FeedScreen() {
           <View style={styles.composerTopActionRow} pointerEvents="box-none">
             <View style={styles.composerDraftPhotosWrap} pointerEvents="box-none">
               {draftPhotos.length > 0 ? (
-                <View style={styles.draftPhotosRow}>
-                  {draftPhotos.map((p, idx) => (
-                    <Pressable
-                      key={`${p.uri}-${idx}`}
-                      onPress={() =>
-                        setDraftPhotos((prev) => prev.filter((_, i) => i !== idx))
-                      }
-                    >
-                      <Image source={{ uri: p.uri }} style={styles.draftThumb} />
-                    </Pressable>
-                  ))}
-                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.draftPhotosRow}
+                >
+                  {draftPhotos.map((p, idx) => {
+                    const isDoc = getAttachmentType(p.mimeType, p.name) === 'document';
+                    const badge = isDoc ? getDocumentBadge(p.mimeType, p.name) : null;
+                    return (
+                      <Pressable
+                        key={`${p.uri}-${idx}`}
+                        style={styles.draftThumbWrap}
+                        onPress={() =>
+                          setDraftPhotos((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        accessibilityLabel={`Remove attachment ${p.name || ''}`}
+                      >
+                        {isDoc ? (
+                          <View
+                            style={[
+                              styles.draftDocCard,
+                              {
+                                backgroundColor: palette.surfaceElevated,
+                                borderColor: palette.outlineVariant,
+                              },
+                            ]}
+                          >
+                            <View
+                              style={[
+                                styles.draftDocBadge,
+                                {
+                                  backgroundColor: `${badge?.color}22`,
+                                  borderColor: `${badge?.color}66`,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.draftDocBadgeText,
+                                  { color: badge?.color },
+                                ]}
+                              >
+                                {badge?.label}
+                              </Text>
+                            </View>
+                            <Text
+                              style={[
+                                styles.draftDocName,
+                                { color: palette.textPrimary },
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="middle"
+                            >
+                              {p.name || 'document'}
+                            </Text>
+                            <MaterialIcons
+                              name="close"
+                              size={14}
+                              color={palette.textMuted}
+                            />
+                          </View>
+                        ) : (
+                          <View style={styles.draftImageContainer}>
+                            <Image source={{ uri: p.uri }} style={styles.draftThumb} />
+                            <View style={styles.draftImageRemoveBadge}>
+                              <MaterialIcons name="close" size={11} color="#FFF" />
+                            </View>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
               ) : null}
             </View>
 
@@ -1468,10 +1602,10 @@ export function FeedScreen() {
 
             <Pressable
               style={styles.pillSmallBtn}
-              accessibilityLabel="Attach media"
+              accessibilityLabel="Attach media or documents"
               onPress={() => {
                 setPlusMenuOpen(false);
-                void handlePickPhotos();
+                setAttachmentSheetOpen(true);
               }}
             >
               <MaterialIcons
@@ -1725,6 +1859,119 @@ export function FeedScreen() {
       ) : null}
 
       {/* Modals & Sheets */}
+      <Modal
+        visible={attachmentSheetOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAttachmentSheetOpen(false)}
+        statusBarTranslucent
+      >
+        <Pressable
+          style={styles.bottomSheetBackdrop}
+          onPress={() => setAttachmentSheetOpen(false)}
+        >
+          <Pressable
+            style={[
+              styles.bottomSheet,
+              {
+                backgroundColor: palette.surfaceCard,
+                borderColor: palette.outlineVariant,
+              },
+            ]}
+            onPress={() => undefined}
+          >
+            <View
+              style={[styles.sheetHandle, { backgroundColor: palette.textMuted }]}
+            />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: palette.textPrimary }]}>
+                Add Attachment
+              </Text>
+            </View>
+
+            <View style={{ paddingVertical: 8, gap: 8 }}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sheetActionItem,
+                  { backgroundColor: palette.surfaceElevated },
+                  pressed && { opacity: 0.75 },
+                ]}
+                onPress={() => void handlePickPhotos()}
+              >
+                <View
+                  style={[
+                    styles.sheetActionIconWrap,
+                    { backgroundColor: palette.primaryContainer },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="photo-library"
+                    size={22}
+                    color={palette.noteBubbleAccent}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.sheetActionTitle, { color: palette.textPrimary }]}
+                  >
+                    Photos & Videos
+                  </Text>
+                  <Text
+                    style={[styles.sheetActionSub, { color: palette.textMuted }]}
+                  >
+                    Attach images and videos from gallery
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name="chevron-right"
+                  size={20}
+                  color={palette.textMuted}
+                />
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sheetActionItem,
+                  { backgroundColor: palette.surfaceElevated },
+                  pressed && { opacity: 0.75 },
+                ]}
+                onPress={() => void handlePickDocuments()}
+              >
+                <View
+                  style={[
+                    styles.sheetActionIconWrap,
+                    { backgroundColor: `${palette.noteBubbleAccent}22` },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="description"
+                    size={22}
+                    color={palette.noteBubbleAccent}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.sheetActionTitle, { color: palette.textPrimary }]}
+                  >
+                    Documents & Files
+                  </Text>
+                  <Text
+                    style={[styles.sheetActionSub, { color: palette.textMuted }]}
+                  >
+                    PDF, Excel, Word, CSV, TXT, PowerPoint, ZIP
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name="chevron-right"
+                  size={20}
+                  color={palette.textMuted}
+                />
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <MobileOptionsSheet
         note={optionsNote}
         palette={palette}
@@ -2471,5 +2718,105 @@ const styles = StyleSheet.create({
   fullPhoto: {
     width: '100%',
     height: '80%',
+  },
+  bottomSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    justifyContent: 'flex-end',
+  },
+  bottomSheet: {
+    width: '100%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    maxHeight: '85%',
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 999,
+    alignSelf: 'center',
+    marginBottom: 12,
+    opacity: 0.55,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    marginBottom: 6,
+  },
+  sheetTitle: {
+    ...MessNoteTypography.titleMedium,
+    fontWeight: '700',
+    flex: 1,
+  },
+  sheetActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    gap: 12,
+  },
+  sheetActionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetActionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sheetActionSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  draftThumbWrap: {
+    marginRight: 8,
+  },
+  draftDocCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 44,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+    maxWidth: 160,
+  },
+  draftDocBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  draftDocBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  draftDocName: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  draftImageContainer: {
+    position: 'relative',
+  },
+  draftImageRemoveBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

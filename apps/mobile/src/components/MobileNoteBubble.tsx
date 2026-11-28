@@ -5,6 +5,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Animated, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
+  getAttachmentType,
   isNoteEdited,
   MessNoteFontFamily,
   MessNoteMetrics,
@@ -17,6 +18,7 @@ import {
 import { getLocalPhotoUri } from '../lib/photoStorage';
 import { supabase } from '../lib/supabase';
 import { useNotesStore } from '../store/notesStore';
+import { MobileDocumentCard } from './MobileDocumentCard';
 import { MobilePlainTextView } from './MobilePlainTextView';
 
 interface Props {
@@ -54,19 +56,34 @@ export function MobileNoteBubble({
     }).start();
   };
 
+  const imageAttachments = note.photo_attachments.filter(
+    (att) => (att.type ?? getAttachmentType(att.mimeType, att.fileName)) !== 'document'
+  );
+  const documentAttachments = note.photo_attachments.filter(
+    (att) => (att.type ?? getAttachmentType(att.mimeType, att.fileName)) === 'document'
+  );
+
   useEffect(() => {
     let mounted = true;
-    if (note.photo_attachments.length === 0) {
+    if (imageAttachments.length === 0) {
       setResolvedUris({});
       return;
     }
 
     void Promise.all(
-      note.photo_attachments.map(async (photo) => {
-        const localUri = getLocalPhotoUri(photo.fileName);
+      imageAttachments.map(async (photo) => {
+        const localFileName = photo.storagePath
+          ? photo.storagePath.split('/').pop()!
+          : photo.fileName;
+        const localUri = getLocalPhotoUri(localFileName);
         const info = await FileSystem.getInfoAsync(localUri);
         if (info.exists) {
           return [photo.id, localUri] as const;
+        }
+        const fallbackUri = getLocalPhotoUri(photo.fileName);
+        const fallbackInfo = await FileSystem.getInfoAsync(fallbackUri);
+        if (fallbackInfo.exists) {
+          return [photo.id, fallbackUri] as const;
         }
         const { data } = await supabase.storage
           .from(NOTE_PHOTOS_BUCKET)
@@ -240,9 +257,9 @@ export function MobileNoteBubble({
         </View>
       ) : null}
 
-      {note.photo_attachments.length > 0 ? (
+      {imageAttachments.length > 0 ? (
         <View style={styles.photoRow}>
-          {note.photo_attachments.map((photo) => {
+          {imageAttachments.map((photo) => {
             const uri = resolvedUris[photo.id];
             return uri ? (
               <Pressable key={photo.id} onPress={() => onPreviewPhoto(uri)}>
@@ -265,6 +282,14 @@ export function MobileNoteBubble({
               </View>
             );
           })}
+        </View>
+      ) : null}
+
+      {documentAttachments.length > 0 ? (
+        <View style={styles.documentList}>
+          {documentAttachments.map((doc) => (
+            <MobileDocumentCard key={doc.id} attachment={doc} palette={palette} />
+          ))}
         </View>
       ) : null}
 
@@ -396,6 +421,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  documentList: {
+    gap: 4,
+    marginVertical: 4,
   },
   photoThumb: {
     width: 68,

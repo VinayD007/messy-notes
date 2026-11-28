@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+  getAttachmentType,
   isNoteEdited,
   type Note,
   type PhotoAttachment,
 } from '@messy-notes/shared';
 import { useNotesStore } from '../store/notesStore';
+import { DocumentCard } from './DocumentCard';
 import { CheckIcon, PushPinIcon, StarIcon } from './MaterialIcons';
 import { PlainTextView } from './PlainTextView';
 
@@ -36,15 +38,22 @@ export function NoteBubble({
   const isDirty = dirtyIds.has(note.id);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
 
+  const imageAttachments = note.photo_attachments.filter(
+    (att) => (att.type ?? getAttachmentType(att.mimeType, att.fileName)) !== 'document'
+  );
+  const documentAttachments = note.photo_attachments.filter(
+    (att) => (att.type ?? getAttachmentType(att.mimeType, att.fileName)) === 'document'
+  );
+
   useEffect(() => {
     let mounted = true;
-    if (note.photo_attachments.length === 0) {
+    if (imageAttachments.length === 0) {
       setPhotoUrls({});
       return;
     }
 
     void Promise.all(
-      note.photo_attachments.map(async (photo) => {
+      imageAttachments.map(async (photo) => {
         const url = await getSignedPhotoUrl(photo.storagePath);
         return [photo.id, url] as const;
       })
@@ -179,12 +188,20 @@ export function NoteBubble({
         </div>
       )}
 
-      {note.photo_attachments.length > 0 && (
+      {imageAttachments.length > 0 && (
         <PhotoStrip
-          attachments={note.photo_attachments}
+          attachments={imageAttachments}
           photoUrls={photoUrls}
           onPreviewPhoto={onPreviewPhoto}
         />
+      )}
+
+      {documentAttachments.length > 0 && (
+        <div className="document-list">
+          {documentAttachments.map((doc) => (
+            <DocumentCard key={doc.id} attachment={doc} />
+          ))}
+        </div>
       )}
 
       <div className="bubble-footer">

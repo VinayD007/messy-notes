@@ -255,6 +255,10 @@ class OfflineSyncEngine {
         for (const note of snapshot.notes) {
           for (const photo of note.photo_attachments) {
             referenced.add(photo.fileName);
+            if (photo.storagePath) {
+              const diskName = photo.storagePath.split('/').pop();
+              if (diskName) referenced.add(diskName);
+            }
           }
         }
         await cleanupUnreferencedPhotos(referenced);

@@ -1,10 +1,16 @@
 import { useRef, useState } from 'react';
 import {
+  MAX_ATTACHMENTS_PER_NOTE,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  MAX_ATTACHMENT_SIZE_LABEL,
   MAX_PHOTOS_PER_NOTE,
+  WEB_ATTACHMENT_ACCEPT,
   adjustSpansForTextChange,
   adjustSpansForTrim,
   buildGroupedText,
   canPinNote,
+  formatFileSize,
+  getAttachmentType,
   hasCopyableText,
   isNoteEdited,
   joinPartialCopyTokens,
@@ -15,12 +21,14 @@ import {
   type ListNote,
   type ListRowEntry,
   type Note,
+  type NoteAttachment,
   type NoteFilter,
   type NoteView,
   type PhotoAttachment,
   type TextSpan,
 } from '@messy-notes/shared';
 import { useNotesStore } from '../store/notesStore';
+import { DocumentCard } from './DocumentCard';
 import {
   PushPinIcon,
   PushPinOutlinedIcon,
@@ -342,6 +350,19 @@ export function NoteDetailDialog({
                   <span>{entry.value}</span>
                 </div>
               ))}
+          {note.photo_attachments && note.photo_attachments.length > 0 && (
+            <div className="document-list" style={{ marginTop: 12, marginBottom: 8 }}>
+              {note.photo_attachments
+                .filter(
+                  (att) =>
+                    (att.type ?? getAttachmentType(att.mimeType, att.fileName)) ===
+                    'document'
+                )
+                .map((doc) => (
+                  <DocumentCard key={doc.id} attachment={doc} />
+                ))}
+            </div>
+          )}
           <span className="muted-sm">
             Created {new Date(note.created_at).toLocaleString()}
             {isNoteEdited(note)
@@ -375,6 +396,7 @@ export function ExpandedRegularDialog({
   ) => Promise<void>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const showSnackbar = useNotesStore((s) => s.showSnackbar);
   const [text, setText] = useState(initialBody);
   const [spans, setSpans] = useState<TextSpan[]>(initialSpans);
   const [keptPhotos, setKeptPhotos] = useState<PhotoAttachment[]>(existingPhotos);
@@ -463,20 +485,30 @@ export function ExpandedRegularDialog({
 
         <div className="dialog-photo-footer">
           <label className="btn-secondary-pill">
-            + Photos ({keptPhotos.length + newFiles.length}/{MAX_PHOTOS_PER_NOTE})
+            + Attachments ({keptPhotos.length + newFiles.length}/{MAX_ATTACHMENTS_PER_NOTE})
             <input
               type="file"
-              accept="image/*"
+              accept={WEB_ATTACHMENT_ACCEPT}
               multiple
               hidden
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
+                const valid: File[] = [];
+                for (const f of files) {
+                  if (f.size > MAX_ATTACHMENT_SIZE_BYTES) {
+                    showSnackbar({
+                      message: `File "${f.name}" exceeds ${MAX_ATTACHMENT_SIZE_LABEL} (${formatFileSize(f.size)})`,
+                    });
+                    continue;
+                  }
+                  valid.push(f);
+                }
                 const room = Math.max(
                   0,
-                  MAX_PHOTOS_PER_NOTE - keptPhotos.length - newFiles.length
+                  MAX_ATTACHMENTS_PER_NOTE - keptPhotos.length - newFiles.length
                 );
-                if (room > 0 && files.length > 0) {
-                  setNewFiles((prev) => [...prev, ...files.slice(0, room)]);
+                if (room > 0 && valid.length > 0) {
+                  setNewFiles((prev) => [...prev, ...valid.slice(0, room)]);
                 }
                 e.target.value = '';
               }}
@@ -532,6 +564,7 @@ export function FieldValueDialog({
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
+  const showSnackbar = useNotesStore((s) => s.showSnackbar);
   const fieldInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const valueInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -688,16 +721,26 @@ export function FieldValueDialog({
 
           {!existingNote && (
             <label className="btn-secondary-pill">
-              + Photos ({newFiles.length}/{MAX_PHOTOS_PER_NOTE})
+              + Attachments ({newFiles.length}/{MAX_ATTACHMENTS_PER_NOTE})
               <input
                 type="file"
-                accept="image/*"
+                accept={WEB_ATTACHMENT_ACCEPT}
                 multiple
                 hidden
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
+                  const valid: File[] = [];
+                  for (const f of files) {
+                    if (f.size > MAX_ATTACHMENT_SIZE_BYTES) {
+                      showSnackbar({
+                        message: `File "${f.name}" exceeds ${MAX_ATTACHMENT_SIZE_LABEL} (${formatFileSize(f.size)})`,
+                      });
+                      continue;
+                    }
+                    valid.push(f);
+                  }
                   setNewFiles((prev) =>
-                    [...prev, ...files].slice(0, MAX_PHOTOS_PER_NOTE)
+                    [...prev, ...valid].slice(0, MAX_ATTACHMENTS_PER_NOTE)
                   );
                   e.target.value = '';
                 }}
@@ -741,6 +784,7 @@ export function ListDialog({
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
+  const showSnackbar = useNotesStore((s) => s.showSnackbar);
   const itemInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const appendListRow = () => {
@@ -863,16 +907,26 @@ export function ListDialog({
 
           {!existingNote && (
             <label className="btn-secondary-pill">
-              + Photos ({newFiles.length}/{MAX_PHOTOS_PER_NOTE})
+              + Attachments ({newFiles.length}/{MAX_ATTACHMENTS_PER_NOTE})
               <input
                 type="file"
-                accept="image/*"
+                accept={WEB_ATTACHMENT_ACCEPT}
                 multiple
                 hidden
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
+                  const valid: File[] = [];
+                  for (const f of files) {
+                    if (f.size > MAX_ATTACHMENT_SIZE_BYTES) {
+                      showSnackbar({
+                        message: `File "${f.name}" exceeds ${MAX_ATTACHMENT_SIZE_LABEL} (${formatFileSize(f.size)})`,
+                      });
+                      continue;
+                    }
+                    valid.push(f);
+                  }
                   setNewFiles((prev) =>
-                    [...prev, ...files].slice(0, MAX_PHOTOS_PER_NOTE)
+                    [...prev, ...valid].slice(0, MAX_ATTACHMENTS_PER_NOTE)
                   );
                   e.target.value = '';
                 }}

@@ -68,7 +68,7 @@ interface NotesState {
     userId: string;
     rawBody: string;
     explicitSpans?: TextSpan[];
-    pickedPhotoUris?: Array<{ uri: string; mimeType?: string }>;
+    pickedPhotoUris?: Array<{ uri: string; mimeType?: string; name?: string; size?: number }>;
   }) => Promise<Note | null>;
 
   createStructuredNote: (params: {
@@ -76,7 +76,7 @@ interface NotesState {
     type: 'field' | 'list';
     title: string | null;
     content: NoteContent;
-    pickedPhotoUris?: Array<{ uri: string; mimeType?: string }>;
+    pickedPhotoUris?: Array<{ uri: string; mimeType?: string; name?: string; size?: number }>;
   }) => Promise<Note>;
 
   updateNote: (
@@ -91,7 +91,7 @@ interface NotesState {
   attachPhotosToNote: (
     userId: string,
     noteId: string,
-    picked: Array<{ uri: string; mimeType?: string }>
+    picked: Array<{ uri: string; mimeType?: string; name?: string; size?: number }>
   ) => Promise<PhotoAttachment[]>;
 
   toggleListItemChecked: (noteId: string, itemId: string) => Promise<void>;
@@ -237,7 +237,9 @@ export const useNotesStore = create<NotesState>((set, get) => {
           sourceUri: item.uri,
           userId,
           noteId,
+          fileName: item.name,
           mimeType: item.mimeType,
+          size: item.size,
         });
         await queuePhotoUpload({
           storage_path: attachment.storagePath,

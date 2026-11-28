@@ -6,6 +6,7 @@ import {
   canPinNote,
   countPinsInCategory,
   createNewNote,
+  getAttachmentType,
   hasNotePatchChanges,
   orderNotesNewestFirst,
   parseBackticksToSpans,
@@ -232,11 +233,13 @@ export const useNotesStore = create<NotesState>((set, get) => {
 
       for (const file of batch) {
         const id = crypto.randomUUID();
-        const fileName = `${id}_${sanitizeFileName(file.name || 'photo.jpg')}`;
-        const storagePath = `${userId}/${noteId}/${fileName}`;
-        const mimeType = file.type || 'image/jpeg';
+        const originalName = file.name || 'file';
+        const sanitizedDiskName = `${id}_${sanitizeFileName(originalName)}`;
+        const storagePath = `${userId}/${noteId}/${sanitizedDiskName}`;
+        const mimeType = file.type || 'application/octet-stream';
+        const type = getAttachmentType(mimeType, originalName);
 
-        // Queue blobs into IndexedDB so photos attach reliably even offline.
+        // Queue blobs into IndexedDB so attachments attach reliably even offline.
         await queueWebPhotoUpload({
           storagePath,
           noteId,
@@ -246,9 +249,11 @@ export const useNotesStore = create<NotesState>((set, get) => {
 
         queued.push({
           id,
-          fileName,
+          fileName: originalName,
           storagePath,
           mimeType,
+          type,
+          fileSize: file.size,
         });
       }
 

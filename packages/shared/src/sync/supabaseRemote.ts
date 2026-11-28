@@ -49,8 +49,7 @@ export async function uploadPhotoToNoteBucket(
       await supabase.storage
         .createBucket(NOTE_PHOTOS_BUCKET, {
           public: false,
-          fileSizeLimit: 10 * 1024 * 1024,
-          allowedMimeTypes: ALLOWED_PHOTO_MIME_TYPES,
+          fileSizeLimit: 25 * 1024 * 1024,
         })
         .catch(() => undefined);
 
@@ -71,6 +70,8 @@ export async function uploadPhotoToNoteBucket(
 
   throw new Error(`Photo upload failed: ${firstAttempt.error.message}`);
 }
+
+export const uploadAttachmentToNoteBucket = uploadPhotoToNoteBucket;
 
 /**
  * Shared Supabase-backed remote adapter used by both Web and Mobile outbox

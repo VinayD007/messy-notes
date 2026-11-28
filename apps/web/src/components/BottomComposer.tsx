@@ -1,9 +1,17 @@
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
+  MAX_ATTACHMENTS_PER_NOTE,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  MAX_ATTACHMENT_SIZE_LABEL,
   MAX_PHOTOS_PER_NOTE,
+  WEB_ATTACHMENT_ACCEPT,
   adjustSpansForTextChange,
+  formatFileSize,
+  getAttachmentType,
+  getDocumentBadge,
   type TextSpan,
 } from '@messy-notes/shared';
+import { useNotesStore } from '../store/notesStore';
 import {
   AddIcon,
   ArrowForwardIcon,
@@ -94,6 +102,7 @@ export function BottomComposer({
 }: BottomComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [sending, setSending] = useState(false);
+  const showSnackbar = useNotesStore((s) => s.showSnackbar);
 
   const isMultiline = draftText.includes('\n') || draftText.length > 68;
   const hasDraftText = draftText.trim().length > 0;
@@ -102,8 +111,20 @@ export function BottomComposer({
   const handleFilePick = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? []);
     if (picked.length > 0) {
-      const merged = [...draftPhotos, ...picked].slice(0, MAX_PHOTOS_PER_NOTE);
-      onChangePhotos(merged);
+      const valid: File[] = [];
+      for (const file of picked) {
+        if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+          showSnackbar({
+            message: `File "${file.name}" exceeds ${MAX_ATTACHMENT_SIZE_LABEL} (${formatFileSize(file.size)})`,
+          });
+          continue;
+        }
+        valid.push(file);
+      }
+      if (valid.length > 0) {
+        const merged = [...draftPhotos, ...valid].slice(0, MAX_ATTACHMENTS_PER_NOTE);
+        onChangePhotos(merged);
+      }
     }
     e.target.value = '';
   };
@@ -129,20 +150,38 @@ export function BottomComposer({
     <div className="composer-dock">
       {draftPhotos.length > 0 && (
         <div className="draft-photo-strip">
-          {draftPhotos.map((file, idx) => (
-            <div key={`${file.name}-${idx}`} className="draft-photo-chip">
-              <span>{file.name}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${file.name}`}
-                onClick={() =>
-                  onChangePhotos(draftPhotos.filter((_, i) => i !== idx))
-                }
-              >
-                <CloseIcon size={14} />
-              </button>
-            </div>
-          ))}
+          {draftPhotos.map((file, idx) => {
+            const isDoc = getAttachmentType(file.type, file.name) === 'document';
+            const badge = isDoc ? getDocumentBadge(file.type, file.name) : null;
+            return (
+              <div key={`${file.name}-${idx}`} className="draft-photo-chip">
+                {isDoc && (
+                  <span
+                    className="web-doc-badge"
+                    style={{
+                      color: badge?.color,
+                      backgroundColor: `${badge?.color}1E`,
+                      borderColor: `${badge?.color}55`,
+                      padding: '1px 5px',
+                      fontSize: '0.62rem',
+                    }}
+                  >
+                    {badge?.label}
+                  </span>
+                )}
+                <span>{file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() =>
+                    onChangePhotos(draftPhotos.filter((_, i) => i !== idx))
+                  }
+                >
+                  <CloseIcon size={14} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -167,7 +206,7 @@ export function BottomComposer({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept={WEB_ATTACHMENT_ACCEPT}
               multiple
               hidden
               onChange={handleFilePick}
@@ -175,8 +214,8 @@ export function BottomComposer({
             <button
               type="button"
               className="composer-clip-btn"
-              aria-label={`Attach media (${draftPhotos.length}/${MAX_PHOTOS_PER_NOTE})`}
-              title={`Attach media (${draftPhotos.length}/${MAX_PHOTOS_PER_NOTE})`}
+              aria-label={`Attach media (${draftPhotos.length}/${MAX_ATTACHMENTS_PER_NOTE})`}
+              title={`Attach media (${draftPhotos.length}/${MAX_ATTACHMENTS_PER_NOTE})`}
               onClick={() => {
                 onFocusInput?.();
                 fileInputRef.current?.click();
